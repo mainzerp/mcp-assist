@@ -223,12 +223,8 @@ class MCPAssistAgent(AbstractConversationAgent):
             intent_response = intent.IntentResponse(language=user_input.language)
             intent_response.async_set_speech(response_text)
 
-            if actions_taken:
-                intent_response.async_set_card(
-                    intent.IntentResponseType.ACTION_DONE,
-                    "Actions Taken",
-                    json.dumps(actions_taken, indent=2)
-                )
+            # Note: Card data removed as it was causing JSON serialization errors
+            # Actions are already executed via MCP tools, so card isn't needed
 
             # Determine follow-up mode
             if self.follow_up_mode == "always":
