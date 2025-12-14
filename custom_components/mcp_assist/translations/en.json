@@ -14,6 +14,7 @@
         "description": "Configure your inference server URL and MCP server port.",
         "data": {
           "lmstudio_url": "Server URL",
+          "api_key": "API Key",
           "mcp_port": "MCP Server Port"
         }
       },
@@ -48,6 +49,8 @@
       "invalid_port": "Port must be between 1024 and 65535.",
       "profile_name_required": "Profile name is required.",
       "invalid_json": "Invalid JSON format. Please check your MCP servers configuration.",
+      "invalid_api_key": "Invalid API key. Please check and try again.",
+      "auth_failed": "Authentication failed. Please verify your API key.",
       "unknown": "An unknown error occurred."
     },
     "abort": {
@@ -61,6 +64,7 @@
         "data": {
           "profile_name": "Profile Name",
           "lmstudio_url": "Server URL",
+          "api_key": "API Key",
           "model_name": "Model Name",
           "system_prompt": "System Prompt",
           "technical_prompt": "Technical Instructions",
