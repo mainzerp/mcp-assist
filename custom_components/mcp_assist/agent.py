@@ -64,44 +64,25 @@ class MCPAssistAgent(AbstractConversationAgent):
         self.entry = entry
         self.history = ConversationHistory()
 
-        # Configuration - read from options first, then data
-        options = entry.options
+        # Static configuration (doesn't change)
         data = entry.data
-
-        # Get server type
         self.server_type = data.get(CONF_SERVER_TYPE, DEFAULT_SERVER_TYPE)
 
-        # Get API key for cloud providers
-        self.api_key = options.get(CONF_API_KEY, data.get(CONF_API_KEY, DEFAULT_API_KEY))
-
-        # Set base URL based on server type
+        # Set base URL based on server type (static)
         if self.server_type == SERVER_TYPE_OPENAI:
             self.base_url = OPENAI_BASE_URL
         elif self.server_type == SERVER_TYPE_GEMINI:
             self.base_url = GEMINI_BASE_URL
         else:
-            # LM Studio or Ollama - use user-provided URL
-            self.base_url = options.get(CONF_LMSTUDIO_URL, data.get(CONF_LMSTUDIO_URL, "")).rstrip("/")
+            # LM Studio or Ollama - URL can change, so make it a property below
+            pass
 
-        self.model_name = options.get(CONF_MODEL_NAME, data.get(CONF_MODEL_NAME, ""))
-        self.mcp_port = options.get(CONF_MCP_PORT, data.get(CONF_MCP_PORT, 0))
-
-        # Read options with fallback to data, then defaults
-        self.debug_mode = options.get(CONF_DEBUG_MODE, data.get(CONF_DEBUG_MODE, DEFAULT_DEBUG_MODE))
-        self.max_iterations = options.get(CONF_MAX_ITERATIONS, data.get(CONF_MAX_ITERATIONS, DEFAULT_MAX_ITERATIONS))
-        self.max_tokens = options.get(CONF_MAX_TOKENS, data.get(CONF_MAX_TOKENS, DEFAULT_MAX_TOKENS))
-        self.temperature = options.get(CONF_TEMPERATURE, data.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE))
-        # Support both old and new config keys for backward compatibility
-        self.follow_up_mode = options.get(CONF_RESPONSE_MODE,
-                                          data.get(CONF_RESPONSE_MODE,
-                                          options.get(CONF_FOLLOW_UP_MODE,
-                                          data.get(CONF_FOLLOW_UP_MODE,
-                                          DEFAULT_RESPONSE_MODE))))
+        # All other config values are now dynamic properties (see @property methods below)
 
         # Log the actual configuration being used
         if self.debug_mode:
             _LOGGER.debug(f"🔍 Server Type: {self.server_type}")
-            _LOGGER.debug(f"🔍 Base URL: {self.base_url}")
+            _LOGGER.debug(f"🔍 Base URL: {self.base_url_dynamic}")
             _LOGGER.debug(f"🔍 Debug mode: ON")
             _LOGGER.debug(f"🔍 Max iterations: {self.max_iterations}")
 
@@ -110,7 +91,69 @@ class MCPAssistAgent(AbstractConversationAgent):
             self.server_type,
             self.model_name,
             self.mcp_port,
-            self.base_url
+            self.base_url_dynamic
+        )
+
+    # Dynamic configuration properties - read from entry.options/data each time
+    @property
+    def base_url_dynamic(self) -> str:
+        """Get base URL (dynamic for local servers)."""
+        if self.server_type in [SERVER_TYPE_OPENAI, SERVER_TYPE_GEMINI]:
+            return self.base_url  # Static
+        else:
+            # LM Studio/Ollama - read dynamically
+            return self.entry.options.get(
+                CONF_LMSTUDIO_URL,
+                self.entry.data.get(CONF_LMSTUDIO_URL, "")
+            ).rstrip("/")
+
+    @property
+    def api_key(self) -> str:
+        """Get API key (dynamic)."""
+        return self.entry.options.get(CONF_API_KEY, self.entry.data.get(CONF_API_KEY, DEFAULT_API_KEY))
+
+    @property
+    def model_name(self) -> str:
+        """Get model name (dynamic)."""
+        return self.entry.options.get(CONF_MODEL_NAME, self.entry.data.get(CONF_MODEL_NAME, ""))
+
+    @property
+    def mcp_port(self) -> int:
+        """Get MCP port (dynamic)."""
+        return self.entry.options.get(CONF_MCP_PORT, self.entry.data.get(CONF_MCP_PORT, 0))
+
+    @property
+    def debug_mode(self) -> bool:
+        """Get debug mode (dynamic)."""
+        return self.entry.options.get(CONF_DEBUG_MODE, self.entry.data.get(CONF_DEBUG_MODE, DEFAULT_DEBUG_MODE))
+
+    @property
+    def max_iterations(self) -> int:
+        """Get max iterations (dynamic)."""
+        return self.entry.options.get(CONF_MAX_ITERATIONS, self.entry.data.get(CONF_MAX_ITERATIONS, DEFAULT_MAX_ITERATIONS))
+
+    @property
+    def max_tokens(self) -> int:
+        """Get max tokens (dynamic)."""
+        return self.entry.options.get(CONF_MAX_TOKENS, self.entry.data.get(CONF_MAX_TOKENS, DEFAULT_MAX_TOKENS))
+
+    @property
+    def temperature(self) -> float:
+        """Get temperature (dynamic)."""
+        return self.entry.options.get(CONF_TEMPERATURE, self.entry.data.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE))
+
+    @property
+    def follow_up_mode(self) -> str:
+        """Get response mode (dynamic, with backward compatibility)."""
+        return self.entry.options.get(
+            CONF_RESPONSE_MODE,
+            self.entry.data.get(
+                CONF_RESPONSE_MODE,
+                self.entry.options.get(
+                    CONF_FOLLOW_UP_MODE,
+                    self.entry.data.get(CONF_FOLLOW_UP_MODE, DEFAULT_RESPONSE_MODE)
+                )
+            )
         )
 
     @property
@@ -146,14 +189,19 @@ class MCPAssistAgent(AbstractConversationAgent):
             _LOGGER.debug("History retrieved: %d turns", len(history))
 
             # Build system prompt with context
-            _LOGGER.debug("Building system prompt...")
             system_prompt = await self._build_system_prompt_with_context(user_input)
-            _LOGGER.debug("System prompt built, length: %d", len(system_prompt))
+            if self.debug_mode:
+                _LOGGER.info(f"📝 System prompt built, length: {len(system_prompt)} chars")
+                _LOGGER.info(f"📝 System prompt preview: {system_prompt[:200]}...")
 
             # Build conversation messages
-            _LOGGER.debug("Building message list...")
             messages = self._build_messages(system_prompt, user_input.text, history)
-            _LOGGER.debug("Messages built: %d messages", len(messages))
+            if self.debug_mode:
+                _LOGGER.info(f"📨 Messages built: {len(messages)} messages")
+                for i, msg in enumerate(messages):
+                    role = msg.get('role')
+                    content_len = len(msg.get('content', '')) if msg.get('content') else 0
+                    _LOGGER.info(f"  Message {i}: role={role}, content_length={content_len}")
 
             # Call LLM API
             _LOGGER.info(f"📡 Calling {self.server_type} API...")
@@ -497,7 +545,14 @@ class MCPAssistAgent(AbstractConversationAgent):
                         # Extract the text content from the MCP response
                         content = data["result"]["content"]
                         if isinstance(content, list) and len(content) > 0:
-                            return {"result": content[0].get("text", "")}
+                            text_result = content[0].get("text", "")
+                            if self.debug_mode:
+                                _LOGGER.info(f"🔍 MCP tool '{tool_name}' returned {len(text_result)} chars")
+                                _LOGGER.info(f"🔍 Full result (repr): {repr(text_result)}")
+                                # Also log each line separately for readability
+                                for i, line in enumerate(text_result.split('\n')):
+                                    _LOGGER.info(f"  Line {i}: {line}")
+                            return {"result": text_result}
                         return {"result": str(content)}
                     elif "error" in data:
                         return {"error": data["error"]}
@@ -631,13 +686,13 @@ class MCPAssistAgent(AbstractConversationAgent):
             "max_tokens": 10
         }
 
-        _LOGGER.info(f"🧪 Testing basic streaming to: {self.base_url}/v1/chat/completions")
+        _LOGGER.info(f"🧪 Testing basic streaming to: {self.base_url_dynamic}/v1/chat/completions")
         _LOGGER.info(f"🧪 Model: {self.model_name}")
 
         try:
             timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                url = f"{self.base_url}/v1/chat/completions"
+                url = f"{self.base_url_dynamic}/v1/chat/completions"
                 headers = self._get_auth_headers()
                 async with session.post(url, headers=headers, json=payload) as response:
                     _LOGGER.info(f"✅ Basic streaming connected! Status: {response.status}")
@@ -702,10 +757,18 @@ class MCPAssistAgent(AbstractConversationAgent):
 
         for iteration in range(self.max_iterations):
             _LOGGER.info(f"🔄 Stream iteration {iteration + 1}")
+            if self.debug_mode and iteration == 0:
+                _LOGGER.info(f"🎯 Using model: {self.model_name}")
 
-            # Debug logging for iteration 2 if enabled
-            if self.debug_mode and iteration == 1:  # This is iteration 2 (0-indexed)
-                _LOGGER.debug("Iteration 2: %d messages to send", len(conversation_messages))
+            # Debug logging for iteration 2+ if enabled
+            if self.debug_mode and iteration >= 1:
+                _LOGGER.info(f"🔄 Iteration {iteration + 1}: {len(conversation_messages)} messages to send")
+                for i, msg in enumerate(conversation_messages):
+                    role = msg.get('role')
+                    has_tool_calls = 'tool_calls' in msg
+                    tool_call_id = msg.get('tool_call_id', '')
+                    content_preview = str(msg.get('content', ''))[:100] if msg.get('content') else ''
+                    _LOGGER.info(f"  Msg {i}: {role}, tool_calls={has_tool_calls}, tool_call_id={tool_call_id}, content={content_preview}")
 
             # Clean messages for streaming compatibility
             cleaned_messages = []
@@ -746,6 +809,23 @@ class MCPAssistAgent(AbstractConversationAgent):
                 payload["tools"] = tools
                 payload["tool_choice"] = "auto"
 
+            # Debug: Log actual cleaned payload being sent in iteration 2+
+            if self.debug_mode and iteration >= 1:
+                _LOGGER.info(f"📤 Sending {len(cleaned_messages)} messages to LLM (iteration {iteration + 1}):")
+                _LOGGER.info(f"📤 Model: {self.model_name}")
+                _LOGGER.info(f"📤 Temperature: {payload.get('temperature', 'default')}")
+                _LOGGER.info(f"📤 Max tokens: {payload.get('max_tokens', payload.get('max_completion_tokens', 'default'))}")
+                for i, msg in enumerate(cleaned_messages):
+                    role = msg.get("role")
+                    content = msg.get("content", "")
+                    content_len = len(str(content)) if content else 0
+                    if role == "tool":
+                        # Show first 200 chars of tool responses
+                        preview = str(content)[:200] if content else ""
+                        _LOGGER.info(f"  [{i}] {role}: {content_len} chars - {preview}...")
+                    else:
+                        _LOGGER.info(f"  [{i}] {role}: {content_len} chars")
+
 
             # Only clean if needed (performance optimization)
             clean_payload = payload
@@ -769,7 +849,7 @@ class MCPAssistAgent(AbstractConversationAgent):
             try:
                 timeout = aiohttp.ClientTimeout(total=30)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
-                    url = f"{self.base_url}/v1/chat/completions"
+                    url = f"{self.base_url_dynamic}/v1/chat/completions"
                     headers = self._get_auth_headers()
 
                     _LOGGER.info(f"📡 Streaming to: {url}")
@@ -1001,7 +1081,7 @@ class MCPAssistAgent(AbstractConversationAgent):
 
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                url = f"{self.base_url}/v1/chat/completions"
+                url = f"{self.base_url_dynamic}/v1/chat/completions"
                 headers = self._get_auth_headers()
 
                 async with session.post(url, headers=headers, json=clean_payload) as response:
