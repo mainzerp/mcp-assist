@@ -10,7 +10,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import DOMAIN, CONF_MCP_PORT, DEFAULT_MCP_PORT
 from .mcp_server import MCPServer
-from .agent import LMStudioMCPAgent
+from .agent import MCPAssistAgent
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug("MCP server refcount: %d", hass.data[DOMAIN]["mcp_refcount"])
 
         # Create conversation agent (unique per profile)
-        agent = LMStudioMCPAgent(hass, entry)
+        agent = MCPAssistAgent(hass, entry)
 
         # Store agent data (per entry)
         hass.data[DOMAIN][entry.entry_id] = {

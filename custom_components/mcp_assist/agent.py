@@ -55,8 +55,8 @@ from .conversation_history import ConversationHistory
 _LOGGER = logging.getLogger(__name__)
 
 
-class LMStudioMCPAgent(AbstractConversationAgent):
-    """LM Studio conversation agent with MCP support."""
+class MCPAssistAgent(AbstractConversationAgent):
+    """MCP Assist conversation agent with multi-provider support."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the agent."""
@@ -155,7 +155,7 @@ class LMStudioMCPAgent(AbstractConversationAgent):
 
             # Call LLM API
             _LOGGER.info(f"📡 Calling {self.server_type} API...")
-            response_text = await self._call_lmstudio(messages)
+            response_text = await self._call_llm(messages)
             _LOGGER.info(f"✅ {self.server_type} response received, length: %d", len(response_text))
 
             # Parse response and execute any Home Assistant actions
@@ -674,7 +674,7 @@ class LMStudioMCPAgent(AbstractConversationAgent):
             # Local servers (LM Studio, Ollama) don't need auth
             return {}
 
-    async def _call_lmstudio_streaming(self, messages: List[Dict[str, Any]]) -> str:
+    async def _call_llm_streaming(self, messages: List[Dict[str, Any]]) -> str:
         """Stream LLM responses with immediate TTS feedback."""
         _LOGGER.info(f"🚀 Starting streaming {self.server_type} conversation")
 
@@ -919,16 +919,16 @@ class LMStudioMCPAgent(AbstractConversationAgent):
 
         return response_text if response_text else "I'm processing your request."
 
-    async def _call_lmstudio(self, messages: List[Dict[str, Any]]) -> str:
-        """Call LM Studio API with MCP tools and handle tool execution loop."""
+    async def _call_llm(self, messages: List[Dict[str, Any]]) -> str:
+        """Call LLM API with MCP tools and handle tool execution loop."""
         # Try streaming first, fallback to HTTP if needed
         try:
-            return await self._call_lmstudio_streaming(messages)
+            return await self._call_llm_streaming(messages)
         except Exception as e:
             _LOGGER.warning(f"Streaming failed ({e}), using HTTP fallback")
-            return await self._call_lmstudio_http(messages)
+            return await self._call_llm_http(messages)
 
-    async def _call_lmstudio_http(self, messages: List[Dict[str, Any]]) -> str:
+    async def _call_llm_http(self, messages: List[Dict[str, Any]]) -> str:
         """Original HTTP-based LLM call (fallback)."""
         _LOGGER.info(f"🚀 Using HTTP fallback for {self.server_type}")
 
