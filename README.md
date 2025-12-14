@@ -78,8 +78,8 @@ Instead of dumping all entities, MCP Assist:
 - Server Type: Choose your LLM provider
   - **LM Studio** - Local, free, runs on your machine
   - **Ollama** - Local, free, command-line based
-  - **OpenAI** - Cloud, paid, GPT-4/GPT-3.5
-  - **Google Gemini** - Cloud, paid/free tier, Gemini models
+  - **OpenAI** - Cloud, paid, GPT-5.2 series
+  - **Google Gemini** - Cloud, paid/free tier, Gemini 3.0 series
 
 **Step 2 - Server Configuration:**
 
@@ -127,12 +127,16 @@ Instead of dumping all entities, MCP Assist:
 2. **Add to MCP Assist**:
    - Select "OpenAI" as Server Type
    - Paste your API key in the API Key field
-   - Select your model (GPT-4, GPT-4-turbo, GPT-4o, or GPT-3.5-turbo)
+   - Select your model:
+     - **gpt-5.2-2025-12-11** (Standard - most capable)
+     - **gpt-5.2-instant** (Faster for chat/info seeking)
+     - **gpt-5.2-thinking** (Best for coding/planning)
+     - **gpt-5.2-pro-2025-12-11** (Pro - highest accuracy)
 
 3. **Cost Considerations**:
-   - GPT-4: ~$0.03 per 1K tokens (input), $0.06 per 1K tokens (output)
-   - GPT-3.5-turbo: ~$0.0005 per 1K tokens (input), $0.0015 per 1K tokens (output)
-   - With MCP Assist's 95% reduction: ~$0.01-0.05 per typical conversation
+   - GPT-5.2 Standard: ~$0.05 per 1K tokens (input), $0.15 per 1K tokens (output)
+   - GPT-5.2 Pro: ~$0.10 per 1K tokens (input), $0.30 per 1K tokens (output)
+   - With MCP Assist's 95% reduction: ~$0.02-0.10 per typical conversation
    - Set up billing limits at https://platform.openai.com/account/limits
 
 4. **Security**:
@@ -152,11 +156,14 @@ Instead of dumping all entities, MCP Assist:
 2. **Add to MCP Assist**:
    - Select "Google Gemini" as Server Type
    - Paste your API key in the API Key field
-   - Select your model (gemini-2.0-flash-exp, gemini-1.5-pro, or gemini-1.5-flash)
+   - Select your model:
+     - **gemini-3-pro-preview-11-2025** (Latest - reasoning-first)
+     - **gemini-3-pro-preview-11-2025-thinking** (Enhanced reasoning)
+     - **gemini-3-pro-preview** (Global endpoints)
 
 3. **Cost Considerations**:
-   - Gemini 1.5 Flash: Free tier available (15 RPM, 1 million TPM)
-   - Gemini 1.5 Pro: $3.50 per 1M tokens (input), $10.50 per 1M tokens (output)
+   - Gemini 3 Pro: Free tier available for testing
+   - Gemini 3 Pro: ~$0.00125 per 1K tokens (input), ~$0.005 per 1K tokens (output)
    - With MCP Assist: Most conversations stay within free tier
    - Check pricing at https://ai.google.dev/pricing
 

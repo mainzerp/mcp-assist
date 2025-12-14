@@ -42,16 +42,20 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
 # Common model lists for cloud providers
 OPENAI_MODELS = [
-    "gpt-4",
-    "gpt-4-turbo",
-    "gpt-4o",
-    "gpt-3.5-turbo",
+    "gpt-5.2-2025-12-11",
+    "gpt-5.2-instant",
+    "gpt-5.2-thinking",
+    "gpt-5.2-pro-2025-12-11",
+    "gpt-4o",  # Legacy support
+    "gpt-4-turbo",  # Legacy support
 ]
 
 GEMINI_MODELS = [
-    "gemini-2.0-flash-exp",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
+    "gemini-3-pro-preview-11-2025",
+    "gemini-3-pro-preview-11-2025-thinking",
+    "gemini-3-pro-preview",
+    "gemini-2.0-flash-exp",  # Legacy support
+    "gemini-1.5-pro",  # Legacy support
 ]
 DEFAULT_MODEL_NAME = "model"
 DEFAULT_SYSTEM_PROMPT = "You are a helpful Home Assistant voice assistant. Respond naturally and conversationally to user requests."
