@@ -223,7 +223,7 @@ Tool calling (function calling) requires the model to:
 - **Inference engine**: LM Studio and Ollama optimize models differently
 - **Quantization level**: Q4 vs Q8 can affect instruction following
 
-### Instruct vs Thinking Models
+### Instruct vs Thinking/Reasoning Models
 
 **Instruct Models** (e.g., `qwen3-8b-instruct`):
 - Fast response times
@@ -231,13 +231,13 @@ Tool calling (function calling) requires the model to:
 - May struggle with complex queries requiring multiple tool calls
 - Good for basic voice commands
 
-**Thinking Models** (e.g., `qwen3-8b-thinking`):
+**Thinking/Reasoning Models** (e.g., `qwen3-8b-thinking`):
 - Slower response times (more deliberate reasoning)
 - **Much better at complex requests** requiring multiple tool calls and context
 - Handles multi-step queries reliably ("check all rooms for open windows, then turn off lights in those rooms")
 - **Recommended for Home Assistant** where queries often involve discovery + action combinations
 
-**Recommendation**: Use thinking models for MCP Assist. The improved reliability with multi-tool queries outweighs the slightly slower response time for most home automation scenarios.
+**Recommendation**: Use thinking/reasoning models for MCP Assist. The improved reliability with multi-tool queries outweighs the slightly slower response time for most home automation scenarios.
 
 ### Recommended Models
 
