@@ -225,13 +225,13 @@ Tool calling (function calling) requires the model to:
 
 ### Instruct vs Thinking Models
 
-**Instruct Models** (e.g., `qwen3-8b-instruct`, `gpt-5.2-instant`):
+**Instruct Models** (e.g., `qwen3-8b-instruct`):
 - Fast response times
 - Best for simple, single-action requests ("turn on the kitchen lights")
 - May struggle with complex queries requiring multiple tool calls
 - Good for basic voice commands
 
-**Thinking Models** (e.g., `qwen3-8b-thinking`, `gpt-5.2-thinking`, `claude-3-5-sonnet`):
+**Thinking Models** (e.g., `qwen3-8b-thinking`):
 - Slower response times (more deliberate reasoning)
 - **Much better at complex requests** requiring multiple tool calls and context
 - Handles multi-step queries reliably ("check all rooms for open windows, then turn off lights in those rooms")
