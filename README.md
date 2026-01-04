@@ -132,15 +132,35 @@ The Smart Entity Index provides a lightweight (~400-800 tokens) snapshot of your
 - "Turn off all the lights in the bedroom"
 - "What's the temperature in the living room?"
 
-### Area-Based Control
-- "Turn on the lights upstairs"
-- "Close all the blinds on the main floor"
-- "What sensors are active in the basement?"
+### Complex Query Example
 
-### State Queries
-- "Which lights are currently on?"
-- "Show me all the open doors"
-- "Are there any motion sensors triggered?"
+**User**: "Do we have a leak?"
+
+**Behind the scenes:**
+```
+1. LLM calls get_index → Sees moisture sensors and water flow monitors exist in system
+2. LLM calls discover_entities(device_class="moisture")
+   → Returns: binary_sensor.bathroom_leak, binary_sensor.kitchen_sink_leak, binary_sensor.laundry_leak
+3. LLM calls discover_entities(name_contains="water flow")
+   → Returns: sensor.water_flow_rate
+4. LLM calls get_entity_details for each sensor
+   → bathroom leak: "off", kitchen leak: "off", laundry leak: "on", water flow: "2.5 gpm"
+5. LLM synthesizes response
+```
+
+**Assistant**: "Yes, the laundry room leak sensor is detecting water and water is flowing at 2.5 gallons per minute. The bathroom and kitchen sensors are dry."
+
+**Follow-up User**: "Turn off the water main"
+
+**Behind the scenes:**
+```
+1. LLM calls discover_entities(name_contains="water main")
+   → Returns: switch.water_main_shutoff
+2. LLM calls perform_action(entity_id="switch.water_main_shutoff", action="turn_off")
+   → Success
+```
+
+**Assistant**: "I've shut off the main water valve."
 
 ### Multi-Turn Conversations
 - **User**: "What lights are on?"
