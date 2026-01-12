@@ -25,44 +25,60 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
 
+    # Create lock for server initialization if it doesn't exist
+    if "server_init_lock" not in hass.data[DOMAIN]:
+        hass.data[DOMAIN]["server_init_lock"] = asyncio.Lock()
+
     try:
-        # Handle shared MCP server and index manager
-        if "shared_mcp_server" not in hass.data[DOMAIN]:
-            # First entry - create shared MCP server and index manager
-            mcp_port = entry.data.get(CONF_MCP_PORT, DEFAULT_MCP_PORT)
-            _LOGGER.info("Creating shared MCP server on port %d", mcp_port)
+        # Use lock to prevent race condition when multiple profiles load simultaneously
+        async with hass.data[DOMAIN]["server_init_lock"]:
+            # Handle shared MCP server and index manager
+            if "shared_mcp_server" not in hass.data[DOMAIN]:
+                # First entry - create shared MCP server and index manager
+                mcp_port = entry.data.get(CONF_MCP_PORT, DEFAULT_MCP_PORT)
+                _LOGGER.info("Creating shared MCP server on port %d", mcp_port)
 
-            # Create and start index manager
-            index_manager = IndexManager(hass)
-            await index_manager.start()
-            hass.data[DOMAIN]["index_manager"] = index_manager
+                # Create and start index manager
+                index_manager = IndexManager(hass)
+                await index_manager.start()
+                hass.data[DOMAIN]["index_manager"] = index_manager
 
-            # Create and start MCP server
-            mcp_server = MCPServer(hass, mcp_port, entry)
-            await mcp_server.start()
+                # Create and start MCP server
+                mcp_server = MCPServer(hass, mcp_port, entry)
+                try:
+                    await mcp_server.start()
+                except OSError as e:
+                    if "Address already in use" in str(e):
+                        _LOGGER.error(
+                            "Port %d is already in use. Either change CONF_MCP_PORT in your "
+                            "configuration or stop the service using port %d.",
+                            mcp_port, mcp_port
+                        )
+                        raise ConfigEntryNotReady(f"Port {mcp_port} already in use") from e
+                    raise
 
-            hass.data[DOMAIN]["shared_mcp_server"] = mcp_server
-            hass.data[DOMAIN]["mcp_refcount"] = 0
-            hass.data[DOMAIN]["mcp_port"] = mcp_port
+                hass.data[DOMAIN]["shared_mcp_server"] = mcp_server
+                hass.data[DOMAIN]["mcp_refcount"] = 0
+                hass.data[DOMAIN]["mcp_port"] = mcp_port
 
-            _LOGGER.info("✅ Shared MCP server and index manager created successfully")
-        else:
-            # Reuse existing MCP server
-            mcp_port = hass.data[DOMAIN]["mcp_port"]
-            _LOGGER.info("Reusing existing shared MCP server on port %d", mcp_port)
+                _LOGGER.info("✅ Shared MCP server and index manager created successfully")
+            else:
+                # Reuse existing MCP server
+                mcp_port = hass.data[DOMAIN]["mcp_port"]
+                _LOGGER.info("Reusing existing shared MCP server on port %d", mcp_port)
 
-            # Warn if user tried to configure different port
-            requested_port = entry.data.get(CONF_MCP_PORT, DEFAULT_MCP_PORT)
-            if requested_port != mcp_port:
-                _LOGGER.warning(
-                    "Profile '%s' requested port %d, but using shared port %d. "
-                    "All profiles share the same MCP server.",
-                    profile_name, requested_port, mcp_port
-                )
+                # Warn if user tried to configure different port
+                requested_port = entry.data.get(CONF_MCP_PORT, DEFAULT_MCP_PORT)
+                if requested_port != mcp_port:
+                    _LOGGER.warning(
+                        "Profile '%s' requested port %d, but using shared port %d. "
+                        "All profiles share the same MCP server.",
+                        profile_name, requested_port, mcp_port
+                    )
 
-        # Increment reference count
-        hass.data[DOMAIN]["mcp_refcount"] += 1
-        _LOGGER.debug("MCP server refcount: %d", hass.data[DOMAIN]["mcp_refcount"])
+            # Increment reference count
+            hass.data[DOMAIN]["mcp_refcount"] += 1
+            _LOGGER.debug("MCP server refcount: %d", hass.data[DOMAIN]["mcp_refcount"])
 
         # Store metadata (per entry)
         hass.data[DOMAIN][entry.entry_id] = {

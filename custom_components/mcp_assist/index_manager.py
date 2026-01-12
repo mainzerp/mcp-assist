@@ -41,6 +41,8 @@ class IndexManager:
         self._last_updated: Optional[datetime] = None
         self._refresh_task: Optional[asyncio.Task] = None
         self._refresh_debounce_seconds = 60
+        self._gap_filling_in_progress = False  # Re-entrancy guard for gap-filling
+        self._first_index_generated = False  # Skip gap-filling on first index (startup)
 
     async def start(self) -> None:
         """Start index manager and set up event listeners."""
@@ -153,12 +155,23 @@ class IndexManager:
         # Perform LLM gap-filling for entities without device_class (if enabled)
         inferred_types = {}
         if not isinstance(entities_without_device_class, Exception) and entities_without_device_class:
-            # Check if gap-filling is enabled in config
-            gap_filling_enabled = await self._is_gap_filling_enabled()
-            if gap_filling_enabled:
-                inferred_types = await self._infer_entity_types(entities_without_device_class)
+            # Skip gap-filling on first index generation (LLM may not be ready at startup)
+            if not self._first_index_generated:
+                _LOGGER.info("Skipping gap-filling on first index generation (startup)")
+            # Check if gap-filling is already in progress (prevent recursion)
+            elif self._gap_filling_in_progress:
+                _LOGGER.debug("Gap-filling already in progress, skipping to prevent recursion")
             else:
-                _LOGGER.debug("Gap-filling disabled in config, skipping entity type inference")
+                # Check if gap-filling is enabled in config
+                gap_filling_enabled = await self._is_gap_filling_enabled()
+                if gap_filling_enabled:
+                    inferred_types = await self._infer_entity_types(entities_without_device_class)
+                else:
+                    _LOGGER.debug("Gap-filling disabled in config, skipping entity type inference")
+
+        # Mark first index as generated
+        if not self._first_index_generated:
+            self._first_index_generated = True
 
         # Build index dict
         index = {
@@ -575,19 +588,23 @@ Example:
 
 Focus on meaningful categories that would help discover relevant entities for user queries."""
 
-        # TEMPORARY FIX: Disable gap-filling to avoid recursion issues during ConversationEntity migration
-        _LOGGER.debug("Gap-filling temporarily disabled during entity migration")
-        return {}
+        # Set re-entrancy guard to prevent recursion
+        # (gap-filling calls agent → agent builds prompt with index → index calls gap-filling)
+        self._gap_filling_in_progress = True
 
-        # TODO: Re-enable once ConversationEntity recursion is resolved
-        # try:
-        #     # Call LLM via conversation agent
-        #     inferred = await self._call_llm_for_inference(prompt)
-        #     _LOGGER.info("LLM gap-filling completed: found %d inferred types", len(inferred))
-        #     return inferred
-        # except Exception as err:
-        #     _LOGGER.warning("LLM gap-filling failed: %s. Index will not include inferred types.", err)
-        #     return {}
+        try:
+            # Call LLM via conversation agent
+            # TODO: Future improvement - use dedicated async_call_llm_direct() method
+            # instead of full async_process() to avoid conversation context overhead
+            inferred = await self._call_llm_for_inference(prompt)
+            _LOGGER.info("LLM gap-filling completed: found %d inferred types", len(inferred))
+            return inferred
+        except Exception as err:
+            _LOGGER.warning("LLM gap-filling failed: %s. Index will not include inferred types.", err)
+            return {}
+        finally:
+            # Always clear the flag, even if exception occurred
+            self._gap_filling_in_progress = False
 
     async def _call_llm_for_inference(self, prompt: str) -> Dict[str, Any]:
         """Call the user's configured LLM to perform inference.
@@ -631,7 +648,7 @@ Focus on meaningful categories that would help discover relevant entities for us
             agent_id=entry.entry_id,  # Use the entry ID as agent ID
         )
 
-        # Call the agent
+        # Call the agent (uses configured max_tokens - user should set 2000+ for gap-filling)
         _LOGGER.debug("Calling LLM for entity type inference...")
         response = await agent.async_process(conversation_input)
 
@@ -686,17 +703,32 @@ Focus on meaningful categories that would help discover relevant entities for us
                     raise ValueError(f"Category {category} is not a dict")
                 if "pattern" not in data or "count" not in data:
                     raise ValueError(f"Category {category} missing required fields")
+        except json.JSONDecodeError as e:
+            # JSON parsing failed - try to repair incomplete JSON
+            _LOGGER.warning("Gap-filling JSON parsing failed at position %d: %s", e.pos, e.msg)
+            _LOGGER.debug("Response text (first 500 chars): %s", response_text[:500])
 
-            _LOGGER.debug("Successfully parsed %d inferred types from LLM", len(parsed))
-            return parsed
+            # Attempt to repair by closing incomplete JSON
+            repaired_text = response_text
+            # Count open braces
+            open_braces = repaired_text.count('{')
+            close_braces = repaired_text.count('}')
 
-        except json.JSONDecodeError as err:
-            _LOGGER.error("Failed to parse LLM response as JSON: %s", err)
-            _LOGGER.debug("LLM response was: %s", response_text[:500])
-            raise ValueError(f"Invalid JSON in LLM response: {err}")
-        except ValueError as err:
-            _LOGGER.error("Invalid structure in LLM response: %s", err)
-            raise
+            if open_braces > close_braces:
+                _LOGGER.info("Attempting to repair incomplete JSON (adding %d closing braces)", open_braces - close_braces)
+                repaired_text += '}' * (open_braces - close_braces)
+
+                try:
+                    parsed = json.loads(repaired_text)
+                    _LOGGER.info("✅ JSON repair successful - recovered %d categories", len(parsed))
+                    return parsed
+                except json.JSONDecodeError:
+                    _LOGGER.error("JSON repair failed, gap-filling will be skipped this cycle")
+
+            raise ValueError(f"Invalid JSON in LLM response: {e.msg}")
+
+        _LOGGER.debug("Successfully parsed %d inferred types from LLM", len(parsed))
+        return parsed
 
     async def _is_gap_filling_enabled(self) -> bool:
         """Check if gap-filling is enabled in config.
