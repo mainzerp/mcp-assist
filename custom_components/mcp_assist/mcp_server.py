@@ -476,10 +476,16 @@ class MCPServer:
         _LOGGER.info("Processing MCP notification: %s", method)
 
         try:
-            if method == "initialized":
+            # Handle both old and new MCP notification formats
+            # Old format: "initialized"
+            # New format: "notifications/initialized"
+            if method in ("initialized", "notifications/initialized"):
                 _LOGGER.info("✅ MCP client initialized successfully")
                 # Send tools/list_changed to all SSE clients
                 await self.broadcast_notification("notifications/tools/list_changed")
+            elif method == "notifications/cancelled":
+                # Client cancelled a pending request
+                _LOGGER.debug("MCP client cancelled a request")
             else:
                 _LOGGER.warning("Unknown notification method: %s", method)
         except Exception as err:
