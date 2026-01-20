@@ -120,6 +120,12 @@ The Smart Entity Index provides a lightweight (~400-800 tokens) snapshot of your
 - Enable Web Search: Turn on Brave Search integration
 - Brave Search API Key: Your API key (if using web search)
 - Debug Mode: Extra logging for troubleshooting
+- **Ollama Keep Alive** (Ollama only): Control how long models stay loaded in memory
+  - `-1` = Keep loaded indefinitely
+  - `0` = Unload immediately after response
+  - `"5m"` = Keep for 5 minutes (default)
+  - Duration strings like `"24h"`, `"168h"` also supported
+- **Ollama Context Window** (Ollama only): Custom context window size (0 = use model default)
 
 ### 3. Set as Voice Assistant
 
