@@ -394,9 +394,16 @@ class MCPAssistConversationEntity(ConversationEntity):
             history = self.history.get_history(conversation_id)
             _LOGGER.debug("History retrieved: %d turns", len(history))
 
+            # Pre-resolve entities FIRST (used by both Fast Path and LLM)
+            pre_resolved: Dict[str, str] = {}
+            if self.enable_pre_resolve:
+                pre_resolved = await self._pre_resolve_entities(user_input.text)
+                if pre_resolved and self.debug_mode:
+                    _LOGGER.info(f"🎯 Pre-resolved {len(pre_resolved)} entities: {pre_resolved}")
+
             # Try Fast Path for simple commands (before LLM call)
             if self.enable_fast_path:
-                fast_path_result = await self._try_fast_path(user_input.text)
+                fast_path_result = await self._try_fast_path(user_input.text, pre_resolved)
                 if fast_path_result and fast_path_result.handled:
                     if fast_path_result.success:
                         _LOGGER.info("⚡ Fast Path handled command successfully")
@@ -420,15 +427,11 @@ class MCPAssistConversationEntity(ConversationEntity):
                             _LOGGER.debug("⚡ Fast Path attempted but failed: %s", fast_path_result.error)
                         # Fall through to LLM
 
-            # Pre-resolve entities if enabled (before building system prompt)
+            # Build pre-resolved hint for LLM system prompt
             pre_resolved_hint = ""
-            if self.enable_pre_resolve:
-                pre_resolved = await self._pre_resolve_entities(user_input.text)
-                if pre_resolved:
-                    hints = ", ".join([f'"{name}" = {entity_id}' for name, entity_id in pre_resolved.items()])
-                    pre_resolved_hint = f"\n\n## Pre-resolved Entities for Current Request\n[Pre-resolved entities: {hints}]"
-                    if self.debug_mode:
-                        _LOGGER.info(f"🎯 Pre-resolved {len(pre_resolved)} entities: {pre_resolved}")
+            if pre_resolved:
+                hints = ", ".join([f'"{name}" = {entity_id}' for name, entity_id in pre_resolved.items()])
+                pre_resolved_hint = f"\n\n## Pre-resolved Entities for Current Request\n[Pre-resolved entities: {hints}]"
 
             # Build system prompt with context (including pre-resolved entities)
             system_prompt = await self._build_system_prompt_with_context(user_input, pre_resolved_hint)
@@ -592,11 +595,12 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.warning("Error getting current area: %s", e)
             return "Unknown"
 
-    async def _try_fast_path(self, user_text: str) -> Optional[Any]:
+    async def _try_fast_path(self, user_text: str, pre_resolved: Optional[Dict[str, str]] = None) -> Optional[Any]:
         """Try to handle a simple command via Fast Path without LLM.
         
         Args:
             user_text: The user's input text
+            pre_resolved: Optional dict of pre-resolved entities {name: entity_id}
             
         Returns:
             FastPathResult if Fast Path handled the request, None otherwise
@@ -633,11 +637,12 @@ class MCPAssistConversationEntity(ConversationEntity):
         if self.debug_mode:
             _LOGGER.info(f"⚡ Fast Path: Attempting with language '{language}'")
         
-        # Process via Fast Path
+        # Process via Fast Path, passing pre-resolved entities
         processor = FastPathProcessor(
             hass=self.hass,
             language=language,
             entity_names=entity_id_to_names,
+            pre_resolved=pre_resolved,
         )
         
         result = await processor.process(user_text)

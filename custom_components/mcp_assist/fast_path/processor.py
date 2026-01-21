@@ -123,6 +123,7 @@ class FastPathProcessor:
         hass: HomeAssistant,
         language: str = "en",
         entity_names: dict[str, list[str]] | None = None,
+        pre_resolved: dict[str, str] | None = None,
     ) -> None:
         """Initialize the Fast Path Processor.
         
@@ -130,10 +131,12 @@ class FastPathProcessor:
             hass: Home Assistant instance
             language: Language code for keywords and responses
             entity_names: Mapping of entity_id to list of names/aliases
+            pre_resolved: Pre-resolved entities from Pre-Resolution {name: entity_id}
         """
         self._hass = hass
         self._loader = KeywordLoader(language)
         self._entity_names = entity_names or {}
+        self._pre_resolved = pre_resolved or {}
         self._language = language
 
     def set_entity_names(self, entity_names: dict[str, list[str]]) -> None:
@@ -390,6 +393,9 @@ class FastPathProcessor:
     def _find_entities(self, text: str) -> list[str]:
         """Find entities mentioned in the text.
         
+        Uses pre-resolved entities from Pre-Resolution first, then falls back
+        to local entity name matching.
+        
         Args:
             text: The text to search for entity names
             
@@ -399,14 +405,24 @@ class FastPathProcessor:
         matched_entities: list[tuple[str, int]] = []
         text_normalized = self._normalize_for_matching(text)
         
-        for entity_id, names in self._entity_names.items():
-            for name in names:
+        # Priority 1: Use pre-resolved entities from Pre-Resolution
+        if self._pre_resolved:
+            for name, entity_id in self._pre_resolved.items():
                 name_normalized = self._normalize_for_matching(name)
-                
-                # Direct substring match
                 if name_normalized in text_normalized:
                     matched_entities.append((entity_id, len(name_normalized)))
-                    break
+                    _LOGGER.debug(f"Fast Path: Using pre-resolved entity: {name} -> {entity_id}")
+        
+        # Priority 2: If no pre-resolved match, try local entity name matching
+        if not matched_entities:
+            for entity_id, names in self._entity_names.items():
+                for name in names:
+                    name_normalized = self._normalize_for_matching(name)
+                    
+                    # Direct substring match
+                    if name_normalized in text_normalized:
+                        matched_entities.append((entity_id, len(name_normalized)))
+                        break
         
         # Sort by match length (longer = more specific) and return entity IDs
         matched_entities.sort(key=lambda x: x[1], reverse=True)
