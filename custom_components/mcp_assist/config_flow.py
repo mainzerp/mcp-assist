@@ -49,6 +49,9 @@ from .const import (
     CONF_ENABLE_GAP_FILLING,
     CONF_OLLAMA_KEEP_ALIVE,
     CONF_OLLAMA_NUM_CTX,
+    CONF_ENABLE_PRE_RESOLVE,
+    CONF_PRE_RESOLVE_THRESHOLD,
+    CONF_PRE_RESOLVE_MARGIN,
     SERVER_TYPE_LMSTUDIO,
     SERVER_TYPE_OLLAMA,
     SERVER_TYPE_OPENAI,
@@ -76,6 +79,9 @@ from .const import (
     DEFAULT_ENABLE_GAP_FILLING,
     DEFAULT_OLLAMA_KEEP_ALIVE,
     DEFAULT_OLLAMA_NUM_CTX,
+    DEFAULT_ENABLE_PRE_RESOLVE,
+    DEFAULT_PRE_RESOLVE_THRESHOLD,
+    DEFAULT_PRE_RESOLVE_MARGIN,
     DEFAULT_API_KEY,
     OPENAI_BASE_URL,
     GEMINI_BASE_URL,
@@ -550,6 +556,13 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_BRAVE_API_KEY, default=DEFAULT_BRAVE_API_KEY): str,
             vol.Optional(CONF_ALLOWED_IPS, default=DEFAULT_ALLOWED_IPS): str,
             vol.Optional(CONF_ENABLE_GAP_FILLING, default=DEFAULT_ENABLE_GAP_FILLING): bool,
+            vol.Optional(CONF_ENABLE_PRE_RESOLVE, default=DEFAULT_ENABLE_PRE_RESOLVE): bool,
+            vol.Optional(CONF_PRE_RESOLVE_THRESHOLD, default=DEFAULT_PRE_RESOLVE_THRESHOLD): vol.All(
+                vol.Coerce(float), vol.Range(min=0.5, max=1.0)
+            ),
+            vol.Optional(CONF_PRE_RESOLVE_MARGIN, default=DEFAULT_PRE_RESOLVE_MARGIN): vol.All(
+                vol.Coerce(float), vol.Range(min=0.0, max=0.5)
+            ),
             vol.Required(CONF_MCP_PORT, default=DEFAULT_MCP_PORT): vol.Coerce(int),
             vol.Required(CONF_DEBUG_MODE, default=DEFAULT_DEBUG_MODE): bool,
         }
@@ -801,13 +814,31 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                     default=options.get(CONF_ENABLE_GAP_FILLING, data.get(CONF_ENABLE_GAP_FILLING, DEFAULT_ENABLE_GAP_FILLING))
                 ): bool,
 
-                # 16. MCP Server Port
+                # 16. Enable Pre-Resolution
+                vol.Optional(
+                    CONF_ENABLE_PRE_RESOLVE,
+                    default=options.get(CONF_ENABLE_PRE_RESOLVE, data.get(CONF_ENABLE_PRE_RESOLVE, DEFAULT_ENABLE_PRE_RESOLVE))
+                ): bool,
+
+                # 17. Pre-Resolution Threshold
+                vol.Optional(
+                    CONF_PRE_RESOLVE_THRESHOLD,
+                    default=options.get(CONF_PRE_RESOLVE_THRESHOLD, data.get(CONF_PRE_RESOLVE_THRESHOLD, DEFAULT_PRE_RESOLVE_THRESHOLD))
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=1.0)),
+
+                # 18. Pre-Resolution Margin
+                vol.Optional(
+                    CONF_PRE_RESOLVE_MARGIN,
+                    default=options.get(CONF_PRE_RESOLVE_MARGIN, data.get(CONF_PRE_RESOLVE_MARGIN, DEFAULT_PRE_RESOLVE_MARGIN))
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=0.5)),
+
+                # 19. MCP Server Port
                 vol.Required(
                     CONF_MCP_PORT,
                     default=options.get(CONF_MCP_PORT, data.get(CONF_MCP_PORT, DEFAULT_MCP_PORT))
                 ): vol.Coerce(int),
 
-                # 17. Debug Mode
+                # 20. Debug Mode
                 vol.Required(
                     CONF_DEBUG_MODE,
                     default=options.get(CONF_DEBUG_MODE, data.get(CONF_DEBUG_MODE, DEFAULT_DEBUG_MODE))

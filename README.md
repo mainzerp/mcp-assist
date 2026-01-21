@@ -5,6 +5,7 @@ A Home Assistant conversation agent that uses MCP (Model Context Protocol) for e
 ## Key Features
 
 - ✅ **95% Token Reduction**: Uses MCP tools for dynamic entity discovery instead of sending all entities
+- ✅ **Instant Entity Recognition**: Pre-resolves device names before the LLM call - faster responses, fewer API calls
 - ✅ **No Entity Dumps**: Never sends 12,000+ token entity lists to the LLM
 - ✅ **Smart Entity Index**: Pre-generated system structure index (~400-800 tokens) for context-aware queries
 - ✅ **Multi-Platform Support**: Works with LM Studio, Ollama, OpenAI, Google Gemini, Anthropic Claude, and OpenRouter
@@ -27,10 +28,11 @@ Traditional voice assistants send your **entire entity list** (lights, switches,
 
 Instead of dumping all entities, MCP Assist:
 
-1. **Starts an MCP Server** on Home Assistant that exposes entity discovery tools
-2. **Your LLM connects** to the MCP server and gets access to these tools:
+1. **Pre-resolves entity names** - When you say "kitchen light", MCP Assist instantly knows you mean `light.kitchen` before even calling the LLM
+2. **Starts an MCP Server** on Home Assistant that exposes entity discovery tools
+3. **Your LLM connects** to the MCP server and gets access to these tools:
    - `get_index` - Get system structure index (areas, domains, device_classes, people, etc.)
-   - `discover_entities` - Find entities by type, area, domain, device_class, or state
+   - `discover_entities` - Find entities by type, area, domain, device_class, or state (fallback when pre-resolution doesn't match)
    - `get_entity_details` - Get current state and attributes
    - `perform_action` - Control devices
    - `run_script` - Execute scripts and return response data
@@ -38,9 +40,9 @@ Instead of dumping all entities, MCP Assist:
    - `list_areas` - List all areas in your home
    - `list_domains` - List all entity types
    - `set_conversation_state` - Smart follow-up handling
-3. **LLM uses the index for smart queries** - Understands what exists without full context dump
-4. **LLM discovers on-demand** - Only fetches the entities it needs for each request
-5. **Token usage drops** from 12,000+ to ~400 tokens per request
+4. **LLM uses pre-resolved entities directly** - For common requests, no discovery call needed
+5. **Falls back to smart discovery** - When pre-resolution doesn't find a match, uses the index and discovery tools
+6. **Token usage drops** from 12,000+ to ~400 tokens per request
 
 ## Token Usage Comparison
 
@@ -53,6 +55,41 @@ Instead of dumping all entities, MCP Assist:
 ## Smart Entity Index (v0.5.0+)
 
 The Smart Entity Index provides a lightweight (~400-800 tokens) snapshot of your Home Assistant system structure, enabling context-aware queries without full entity dumps. The index includes areas, domains, device classes, people, calendars, zones, automations, and scripts. For entities without standardized device_class attributes (like custom integrations), LLM-powered gap-filling automatically infers semantic categories from naming patterns. This results in faster, more accurate queries that use ~95% fewer tokens compared to traditional entity dumps.
+
+## Entity Pre-Resolution
+
+Pre-Resolution makes your assistant **faster and cheaper** by recognizing device names before the LLM is called.
+
+### Before Pre-Resolution (2 steps)
+```
+You: "Turn on the kitchen light"
+  → LLM calls discover_entities("kitchen light")
+  → LLM calls perform_action("light.kitchen", "turn_on")
+```
+
+### With Pre-Resolution (1 step)
+```
+You: "Turn on the kitchen light"
+  → Pre-resolution: "kitchen light" = light.kitchen ✓
+  → LLM calls perform_action("light.kitchen", "turn_on")
+```
+
+**Result**: Faster responses, fewer API calls, lower costs.
+
+### Features
+
+- **Handles typos**: "kichen lite" still finds the kitchen light
+- **Multiple devices**: "Turn off kitchen and bedroom lights" resolves both at once
+- **Multi-language support**: Works with entity names in any language
+- **Automatic fallback**: If no match found, uses normal discovery
+
+### Settings
+
+| Setting | Default | What it does |
+|---------|---------|-------------|
+| Enable Pre-Resolution | On | Turn the feature on/off |
+| Confidence Threshold | 0.90 | How similar a name must be to match |
+| Match Margin | 0.08 | How much better the best match must be than alternatives |
 
 ## Requirements
 
@@ -204,6 +241,9 @@ The Smart Entity Index provides a lightweight (~400-800 tokens) snapshot of your
   - **Always**: Always wait for follow-up
   - **None**: Never wait for follow-up
 - **Enable Smart Entity Index**: Context-aware entity discovery with automatic gap-filling for uncommon devices (default: enabled)
+- **Enable Pre-Resolution**: Automatically recognize device names before LLM call for faster responses (default: enabled)
+- **Pre-Resolution Threshold**: How confident the match must be (0.5-1.0, default: 0.90)
+- **Pre-Resolution Margin**: How much better the best match must be than the second-best (0.0-0.5, default: 0.08)
 
 ### MCP Server Settings
 - **MCP Server Port**: Default 8090 (change if port conflict)

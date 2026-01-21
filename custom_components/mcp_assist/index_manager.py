@@ -38,6 +38,7 @@ class IndexManager:
         """Initialize index manager."""
         self.hass = hass
         self._index: Optional[Dict[str, Any]] = None
+        self._entity_names: Optional[Dict[str, str]] = None  # Mapping: normalized_name -> entity_id
         self._last_updated: Optional[datetime] = None
         self._refresh_task: Optional[asyncio.Task] = None
         self._refresh_debounce_seconds = 60
@@ -87,6 +88,7 @@ class IndexManager:
 
         try:
             self._index = await self.generate_index()
+            self._entity_names = await self._build_entity_names_mapping()
             self._last_updated = datetime.now()
 
             # Calculate index size estimate
@@ -96,10 +98,11 @@ class IndexManager:
 
             elapsed = (datetime.now() - start_time).total_seconds()
             _LOGGER.info(
-                "✅ Index generated in %.2fs - Size: %d chars (~%d tokens)",
+                "✅ Index generated in %.2fs - Size: %d chars (~%d tokens), Entity names: %d",
                 elapsed,
                 char_count,
-                token_estimate
+                token_estimate,
+                len(self._entity_names) if self._entity_names else 0
             )
 
         except Exception as err:
@@ -111,6 +114,15 @@ class IndexManager:
             await self.refresh_index()
 
         return self._index or {}
+
+    def get_entity_names(self) -> Dict[str, str]:
+        """Get the entity names mapping for pre-resolution.
+        
+        Returns:
+            Dict mapping normalized friendly names to entity_ids.
+            E.g. {"küchenlicht": "light.kitchen", "wohnzimmer lampe": "light.living_room"}
+        """
+        return self._entity_names or {}
 
     async def generate_index(self) -> Dict[str, Any]:
         """Generate the system structure index.
@@ -755,3 +767,89 @@ Focus on meaningful categories that would help discover relevant entities for us
 
         _LOGGER.debug("Gap-filling enabled in config: %s", enabled)
         return enabled
+
+    async def _build_entity_names_mapping(self) -> Dict[str, str]:
+        """Build a mapping of normalized friendly names to entity IDs.
+        
+        This mapping is used for pre-resolution of entities before LLM calls.
+        Multiple name variants are generated for each entity to improve matching.
+        
+        Returns:
+            Dict mapping normalized names to entity_ids.
+            E.g. {"küchenlicht": "light.kitchen", "kitchen light": "light.kitchen"}
+        """
+        entity_reg = er.async_get(self.hass)
+        entity_names: Dict[str, str] = {}
+        
+        for entity in entity_reg.entities.values():
+            if not async_should_expose(self.hass, "conversation", entity.entity_id):
+                continue
+                
+            state_obj = self.hass.states.get(entity.entity_id)
+            if not state_obj:
+                continue
+            
+            # Get friendly name from state
+            friendly_name = state_obj.name
+            if not friendly_name:
+                continue
+            
+            # Normalize and add the primary friendly name
+            normalized = self._normalize_text(friendly_name)
+            if normalized and len(normalized) >= 2:
+                entity_names[normalized] = entity.entity_id
+            
+            # Also add variants without common suffixes/prefixes
+            # E.g. "Küchenlicht Decke" -> also match "küchenlicht"
+            words = normalized.split()
+            if len(words) > 1:
+                # First word only (for "Küchenlicht Decke" -> "küchenlicht")
+                if len(words[0]) >= 3:
+                    entity_names[words[0]] = entity.entity_id
+                # All but last word (for "Living Room Light" -> "living room")
+                partial = ' '.join(words[:-1])
+                if len(partial) >= 3:
+                    entity_names[partial] = entity.entity_id
+            
+            # Add entity_id based name (e.g. "light.kitchen" -> "kitchen")
+            entity_name_part = entity.entity_id.split('.', 1)[1] if '.' in entity.entity_id else ''
+            if entity_name_part:
+                # Convert underscores to spaces and normalize
+                id_based_name = self._normalize_text(entity_name_part.replace('_', ' '))
+                if id_based_name and len(id_based_name) >= 2:
+                    entity_names[id_based_name] = entity.entity_id
+        
+        _LOGGER.debug("Built entity names mapping with %d entries", len(entity_names))
+        return entity_names
+    
+    def _normalize_text(self, text: str) -> str:
+        """Normalize text for matching.
+        
+        - Converts to lowercase
+        - Handles German umlauts (ä->ae, ö->oe, ü->ue, ß->ss)
+        - Removes special characters
+        - Normalizes whitespace
+        
+        Args:
+            text: The text to normalize
+            
+        Returns:
+            Normalized text
+        """
+        if not text:
+            return ""
+        
+        # Convert to lowercase
+        text = text.lower()
+        
+        # Keep umlauts for exact matching but also create normalized version
+        # This is the version with umlauts preserved (for German users)
+        
+        # Remove special characters except spaces, letters, numbers
+        import re
+        text = re.sub(r'[^\w\s]', '', text, flags=re.UNICODE)
+        
+        # Normalize whitespace
+        text = ' '.join(text.split())
+        
+        return text

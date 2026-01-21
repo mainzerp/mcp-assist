@@ -34,6 +34,9 @@ CONF_ALLOWED_IPS = "allowed_ips"
 CONF_ENABLE_GAP_FILLING = "enable_gap_filling"
 CONF_OLLAMA_KEEP_ALIVE = "ollama_keep_alive"
 CONF_OLLAMA_NUM_CTX = "ollama_num_ctx"
+CONF_ENABLE_PRE_RESOLVE = "enable_pre_resolve"
+CONF_PRE_RESOLVE_THRESHOLD = "pre_resolve_threshold"
+CONF_PRE_RESOLVE_MARGIN = "pre_resolve_margin"
 
 # Default values
 DEFAULT_SERVER_TYPE = "lmstudio"
@@ -65,6 +68,9 @@ DEFAULT_ALLOWED_IPS = ""
 DEFAULT_ENABLE_GAP_FILLING = True
 DEFAULT_OLLAMA_KEEP_ALIVE = "5m"  # 5 minutes
 DEFAULT_OLLAMA_NUM_CTX = 0  # 0 = use model default
+DEFAULT_ENABLE_PRE_RESOLVE = True  # Enable entity pre-resolution by default
+DEFAULT_PRE_RESOLVE_THRESHOLD = 0.90  # Minimum similarity score for fuzzy matching
+DEFAULT_PRE_RESOLVE_MARGIN = 0.08  # Minimum margin to second-best match
 
 # MCP Server settings
 MCP_SERVER_NAME = "ha-entity-discovery"
@@ -78,12 +84,21 @@ DEFAULT_TECHNICAL_PROMPT = """You are controlling a Home Assistant smart home sy
 
 ## CRITICAL RULES
 **Never guess entity IDs.** For ANY device-related request, you MUST:
-- FIRST call discover_entities to find the actual entities
-- THEN call perform_action or get_entity_details using discovered IDs
+- FIRST check if [Pre-resolved entities: ...] is provided in the system message
+- If pre-resolved entities are available: Use those entity_ids DIRECTLY with perform_action or get_entity_details
+- If NO pre-resolved entities: Call discover_entities first to find the actual entities
 - This applies EVERY TIME - even for follow-up questions about different entities
 
+## Pre-resolved Entities
+When the user message contains `[Pre-resolved entities: "name" = entity_id]`:
+- These are already verified entity IDs matching the user's request
+- Use them DIRECTLY without calling discover_entities
+- Example: User says "Turn on the kitchen light" with `[Pre-resolved entities: "kitchen light" = light.kitchen]`
+  → Call perform_action(entity_id="light.kitchen", action="turn_on") immediately
+- Multiple entities may be pre-resolved for requests involving several devices
+
 ## Available Tools
-- **discover_entities**: find devices by name/area/domain/device_class/state (ALWAYS use first)
+- **discover_entities**: find devices by name/area/domain/device_class/state (use as FALLBACK if no pre-resolved entities available or mathching)
 - **perform_action**: control devices using discovered entity IDs
 - **get_entity_details**: check states using discovered entity IDs
 - **list_areas/list_domains**: list available areas and device types
@@ -109,9 +124,10 @@ Example:
 Use the index below to see what device_classes and domains exist, then query accordingly.
 
 For ANY device request:
-1. Check the index to understand what's available
-2. Use discover_entities with appropriate filters (device_class, area, domain, name_contains, state)
-3. If no results, try broader search
+1. Check if pre-resolved entities are provided → use them directly
+2. If not, check the index to understand what's available
+3. Use discover_entities with appropriate filters (device_class, area, domain, name_contains, state)
+4. If no results, try broader search
 
 ## Response Rules
 - Short, concise replies in plain text only (no *, **, markup, or URLs)
