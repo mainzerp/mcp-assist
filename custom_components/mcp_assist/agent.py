@@ -481,12 +481,11 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.info(f"📡 Calling {self.server_type} API...")
             llm_start = time.perf_counter()
             try:
-                response_text = await self._call_llm(messages)
+                response_text, tokens_used = await self._call_llm(messages)
                 llm_duration_ms = (time.perf_counter() - llm_start) * 1000
                 if stats:
-                    # Record LLM call (tokens will be 0 for now, can be enhanced later)
-                    stats.record_llm_call(llm_duration_ms, tokens=0)
-                _LOGGER.info(f"✅ {self.server_type} response received, length: %d", len(response_text))
+                    stats.record_llm_call(llm_duration_ms, tokens=tokens_used)
+                _LOGGER.info(f"✅ {self.server_type} response received, length: %d, tokens: %d", len(response_text), tokens_used)
             except Exception as llm_error:
                 if stats:
                     stats.record_llm_error()
@@ -1525,8 +1524,12 @@ class MCPAssistConversationEntity(ConversationEntity):
 
         return payload
 
-    async def _call_llm_streaming(self, messages: List[Dict[str, Any]]) -> str:
-        """Stream LLM responses with immediate TTS feedback."""
+    async def _call_llm_streaming(self, messages: List[Dict[str, Any]]) -> tuple[str, int]:
+        """Stream LLM responses with immediate TTS feedback.
+        
+        Returns:
+            Tuple of (response_text, total_tokens_used)
+        """
         _LOGGER.info(f"🚀 Starting streaming {self.server_type} conversation")
 
         # Test streaming once and cache result
@@ -1548,6 +1551,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         response_text = ""
         sentence_buffer = ""
         completed_tools = set()
+        total_tokens = 0  # Track total tokens across all iterations
 
         for iteration in range(self.max_iterations):
             _LOGGER.info(f"🔄 Stream iteration {iteration + 1}")
@@ -1676,8 +1680,14 @@ class MCPAssistConversationEntity(ConversationEntity):
 
                                     data = json.loads(line_str)
 
-                                    # Check for completion
+                                    # Check for completion - extract token usage
                                     if data.get("done"):
+                                        # Ollama provides token counts in final message
+                                        prompt_tokens = data.get("prompt_eval_count", 0) or 0
+                                        completion_tokens = data.get("eval_count", 0) or 0
+                                        total_tokens += prompt_tokens + completion_tokens
+                                        if prompt_tokens or completion_tokens:
+                                            _LOGGER.info(f"📊 Ollama tokens: prompt={prompt_tokens}, completion={completion_tokens}")
                                         break
 
                                     # Extract message
@@ -1698,6 +1708,15 @@ class MCPAssistConversationEntity(ConversationEntity):
                                         break
 
                                     data = json.loads(line_str[6:])
+                                    
+                                    # Extract token usage if present (some providers send this)
+                                    if 'usage' in data and data['usage']:
+                                        usage = data['usage']
+                                        chunk_tokens = usage.get('total_tokens', 0)
+                                        if not chunk_tokens:
+                                            chunk_tokens = usage.get('prompt_tokens', 0) + usage.get('completion_tokens', 0)
+                                        total_tokens = max(total_tokens, chunk_tokens)
+                                    
                                     choice = data['choices'][0]
                                     delta = choice.get('delta', {})
 
@@ -1835,15 +1854,20 @@ class MCPAssistConversationEntity(ConversationEntity):
             else:
                 # No tool calls, return the response
                 if response_text:
-                    return response_text
+                    return (response_text, total_tokens)
                 else:
                     # No content and no tools, might need another iteration
                     _LOGGER.warning("Empty response from streaming, retrying...")
 
-        return response_text if response_text else "I'm processing your request."
+        final_text = response_text if response_text else "I'm processing your request."
+        return (final_text, total_tokens)
 
-    async def _call_llm(self, messages: List[Dict[str, Any]]) -> str:
-        """Call LLM API with MCP tools and handle tool execution loop."""
+    async def _call_llm(self, messages: List[Dict[str, Any]]) -> tuple[str, int]:
+        """Call LLM API with MCP tools and handle tool execution loop.
+        
+        Returns:
+            Tuple of (response_text, total_tokens_used)
+        """
         # Try streaming first, fallback to HTTP if needed
         try:
             return await self._call_llm_streaming(messages)
@@ -1851,8 +1875,12 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.warning(f"Streaming failed ({e}), using HTTP fallback")
             return await self._call_llm_http(messages)
 
-    async def _call_llm_http(self, messages: List[Dict[str, Any]]) -> str:
-        """Original HTTP-based LLM call (fallback)."""
+    async def _call_llm_http(self, messages: List[Dict[str, Any]]) -> tuple[str, int]:
+        """Original HTTP-based LLM call (fallback).
+        
+        Returns:
+            Tuple of (response_text, total_tokens_used)
+        """
         _LOGGER.info(f"🚀 Using HTTP fallback for {self.server_type}")
 
         # Get MCP tools once
@@ -1862,6 +1890,7 @@ class MCPAssistConversationEntity(ConversationEntity):
 
         # Keep a mutable copy of messages for the conversation
         conversation_messages = list(messages)
+        total_tokens = 0  # Track total tokens across all iterations
 
         # Tool execution loop
         for iteration in range(self.max_iterations):
@@ -1914,6 +1943,23 @@ class MCPAssistConversationEntity(ConversationEntity):
                         raise Exception(f"{self.server_type} API error {response.status}: {error_text}")
 
                     data = await response.json()
+                    
+                    # Extract token usage from response
+                    if self.server_type == SERVER_TYPE_OLLAMA:
+                        # Ollama: prompt_eval_count + eval_count
+                        prompt_tokens = data.get("prompt_eval_count", 0) or 0
+                        completion_tokens = data.get("eval_count", 0) or 0
+                        total_tokens += prompt_tokens + completion_tokens
+                    elif "usage" in data and data["usage"]:
+                        # OpenAI-compatible: usage object
+                        usage = data["usage"]
+                        chunk_tokens = usage.get("total_tokens", 0)
+                        if not chunk_tokens:
+                            chunk_tokens = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+                        total_tokens += chunk_tokens
+                    
+                    if total_tokens > 0:
+                        _LOGGER.info(f"📊 HTTP tokens this iteration: {total_tokens}")
 
                     # Parse response based on server type
                     thought_signature = None  # Track for Gemini 3
@@ -1972,12 +2018,12 @@ class MCPAssistConversationEntity(ConversationEntity):
                     else:
                         # No more tool calls, we have the final response
                         final_content = message.get("content", "").strip()
-                        _LOGGER.info(f"💬 Final response received (length: {len(final_content)})")
-                        return final_content
+                        _LOGGER.info(f"💬 Final response received (length: {len(final_content)}, tokens: {total_tokens})")
+                        return (final_content, total_tokens)
 
         # If we hit max iterations, return what we have
         _LOGGER.warning("⚠️ Hit maximum iterations (5) in tool execution loop")
-        return "I'm still processing your request. Please try again."
+        return ("I'm still processing your request. Please try again.", total_tokens)
 
     async def _execute_actions(
         self,
