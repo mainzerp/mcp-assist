@@ -1,6 +1,6 @@
-# Custom Keywords - Eigene Erweiterungen
-# Kopiere diese Datei nach custom.yaml und füge eigene Keywords hinzu.
-# Diese Datei wird bei Updates NICHT überschrieben.
+# Custom Keywords - Your Own Extensions
+# Copy this file to custom.yaml and add your own keywords.
+# This file will NOT be overwritten during updates.
 #
 # Format:
 #   actions:
@@ -10,7 +10,7 @@
 #         - keyword2
 
 actions:
-  # Beispiel: Eigene Keywords für turn_on
+  # Example: Custom keywords for turn_on
   turn_on:
     de:
       - anknipsen
@@ -18,7 +18,7 @@ actions:
     en:
       - fire up
 
-  # Beispiel: Eigene Keywords für turn_off
+  # Example: Custom keywords for turn_off
   turn_off:
     de:
       - abknipsen
@@ -26,7 +26,7 @@ actions:
     en:
       - kill
 
-# Eigene Farbtemperatur-Aliase
+# Custom color temperature aliases
 values:
   color_temp:
     de:
