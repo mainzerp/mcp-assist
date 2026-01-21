@@ -132,8 +132,8 @@
       "llm_avg_response_time": {
         "name": "LLM Avg Response Time"
       },
-      "fast_path_rate": {
-        "name": "Fast Path Rate"
+      "fast_path_success_rate": {
+        "name": "Fast Path Success Rate"
       },
       "fast_path_hits": {
         "name": "Fast Path Hits"
@@ -155,6 +155,9 @@
       },
       "llm_errors": {
         "name": "LLM Errors"
+      },
+      "local_processing_rate": {
+        "name": "Local Processing Rate"
       },
       "parallel_tool_batches": {
         "name": "Parallel Tool Batches"

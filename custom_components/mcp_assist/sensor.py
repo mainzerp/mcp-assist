@@ -61,15 +61,15 @@ SENSOR_TYPES: tuple[MCPAssistSensorDescription, ...] = (
         icon="mdi:robot",
         value_fn=lambda stats: stats.get("llm_avg_response_time", 0),
     ),
-    # Fast Path Rate
+    # Fast Path Success Rate
     MCPAssistSensorDescription(
-        key="fast_path_rate",
-        translation_key="fast_path_rate",
-        name="Fast Path Rate",
+        key="fast_path_success_rate",
+        translation_key="fast_path_success_rate",
+        name="Fast Path Success Rate",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:percent-circle",
-        value_fn=lambda stats: stats.get("fast_path_rate", 0),
+        value_fn=lambda stats: stats.get("fast_path_success_rate", 0),
         attr_fn=lambda stats, _: {
             "hits": stats.get("fast_path_hits", 0),
             "misses": stats.get("fast_path_misses", 0),
@@ -150,6 +150,20 @@ SENSOR_TYPES: tuple[MCPAssistSensorDescription, ...] = (
         icon="mdi:alert-circle",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda stats: stats.get("llm_errors", 0),
+    ),
+    # Local Processing Rate (Fast Path vs LLM)
+    MCPAssistSensorDescription(
+        key="local_processing_rate",
+        translation_key="local_processing_rate",
+        name="Local Processing Rate",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:home-lightning-bolt",
+        value_fn=lambda stats: stats.get("local_processing_rate", 0),
+        attr_fn=lambda stats, _: {
+            "fast_path_hits": stats.get("fast_path_hits", 0),
+            "llm_calls": stats.get("llm_calls_total", 0),
+        },
     ),
     # Parallel Tool Batches
     MCPAssistSensorDescription(

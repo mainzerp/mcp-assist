@@ -30,8 +30,8 @@ Traditional voice assistants send your **entire entity list** (lights, switches,
 
 Instead of dumping all entities, MCP Assist:
 
-1. **Pre-resolves entity names** - When you say "kitchen light", MCP Assist instantly knows you mean `light.kitchen` before even calling the LLM
-2. **Starts an MCP Server** on Home Assistant that exposes entity discovery tools
+1. **Runs an MCP Server** on Home Assistant that exposes entity discovery tools (started once when integration loads)
+2. **Pre-resolves entity names** - When you say "kitchen light", MCP Assist instantly knows you mean `light.kitchen` before even calling the LLM
 3. **Your LLM connects** to the MCP server and gets access to these tools:
    - `get_index` - Get system structure index (areas, domains, device_classes, people, etc.)
    - `discover_entities` - Find entities by type, area, domain, device_class, or state (fallback when pre-resolution doesn't match)

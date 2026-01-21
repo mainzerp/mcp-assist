@@ -204,6 +204,14 @@ class MCPAssistStatistics:
             return 0.0
         return round(self._parallel_tools_total / self._parallel_batches, 1)
 
+    @property
+    def local_processing_rate(self) -> float:
+        """Calculate percentage of requests handled locally (Fast Path) vs LLM."""
+        total = self._fast_path_hits + self._llm_calls
+        if total == 0:
+            return 0.0
+        return round((self._fast_path_hits / total) * 100, 1)
+
     def get_stats(self) -> dict[str, Any]:
         """Get all statistics as a dictionary."""
         self._check_date_rollover()
@@ -227,7 +235,8 @@ class MCPAssistStatistics:
             # Fast Path
             "fast_path_hits": self._fast_path_hits,
             "fast_path_misses": self._fast_path_misses,
-            "fast_path_rate": self.fast_path_rate,
+            "fast_path_success_rate": self.fast_path_rate,
+            "local_processing_rate": self.local_processing_rate,
 
             # Pre-resolve
             "pre_resolve_hits": self._pre_resolve_hits,
