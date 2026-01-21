@@ -1200,10 +1200,15 @@ class MCPAssistConversationEntity(ConversationEntity):
             if self.debug_mode:
                 _LOGGER.info(f"🚀 Executing {len(parallel_calls)} tool(s) in parallel")
             
+            import time
+            start_time = time.perf_counter()
+            
             parallel_tasks = [
                 self._execute_single_tool_call(call) for call in parallel_calls
             ]
             parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+            
+            actual_time_ms = (time.perf_counter() - start_time) * 1000
             
             for call, result in zip(parallel_calls, parallel_results):
                 if isinstance(result, Exception):
@@ -1224,6 +1229,16 @@ class MCPAssistConversationEntity(ConversationEntity):
                         })
                 else:
                     results.append(result)
+            
+            # Record parallel execution statistics
+            # Estimate: sequential would take actual_time * batch_size
+            batch_size = len(parallel_calls)
+            if batch_size > 1:
+                estimated_sequential_ms = actual_time_ms * batch_size
+                time_saved_ms = estimated_sequential_ms - actual_time_ms
+                stats = self.hass.data.get(DOMAIN, {}).get("statistics")
+                if stats:
+                    stats.record_parallel_execution(batch_size, time_saved_ms)
         
         # Execute action tools sequentially
         if sequential_calls:

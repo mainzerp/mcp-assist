@@ -43,7 +43,8 @@
           "enable_pre_resolve": "Enable Entity Pre-Resolution",
           "pre_resolve_threshold": "Pre-Resolution Similarity Threshold",
           "enable_fast_path": "Enable Fast Path",
-          "fast_path_language": "Fast Path Language"
+          "fast_path_language": "Fast Path Language",
+          "enable_parallel_tools": "Enable Parallel Tool Execution"
         }
       },
       "mcp_server": {
@@ -98,7 +99,8 @@
           "enable_pre_resolve": "Enable Entity Pre-Resolution",
           "pre_resolve_threshold": "Pre-Resolution Similarity Threshold",
           "enable_fast_path": "Enable Fast Path",
-          "fast_path_language": "Fast Path Language"
+          "fast_path_language": "Fast Path Language",
+          "enable_parallel_tools": "Enable Parallel Tool Execution"
         }
       },
       "mcp_server": {
@@ -118,6 +120,50 @@
     "conversation": {
       "mcp_assist": {
         "name": "{profile_name}"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status"
+      },
+      "fast_path_avg_response_time": {
+        "name": "Fast Path Avg Response Time"
+      },
+      "llm_avg_response_time": {
+        "name": "LLM Avg Response Time"
+      },
+      "fast_path_rate": {
+        "name": "Fast Path Rate"
+      },
+      "fast_path_hits": {
+        "name": "Fast Path Hits"
+      },
+      "pre_resolve_rate": {
+        "name": "Pre-Resolve Rate"
+      },
+      "llm_calls_today": {
+        "name": "LLM Calls Today"
+      },
+      "tokens_used_today": {
+        "name": "Tokens Used Today"
+      },
+      "requests_today": {
+        "name": "Requests Today"
+      },
+      "indexed_entities": {
+        "name": "Indexed Entities"
+      },
+      "llm_errors": {
+        "name": "LLM Errors"
+      },
+      "parallel_tool_batches": {
+        "name": "Parallel Tool Batches"
+      },
+      "avg_parallel_batch_size": {
+        "name": "Avg Parallel Batch Size"
+      },
+      "parallel_time_saved_ms": {
+        "name": "Parallel Time Saved"
       }
     }
   }

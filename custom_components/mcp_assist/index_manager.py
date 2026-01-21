@@ -81,6 +81,15 @@ class IndexManager:
         except asyncio.CancelledError:
             _LOGGER.debug("Index refresh cancelled (newer change detected)")
 
+    def get_exposed_entity_count(self) -> int:
+        """Get the number of entities exposed to conversation agents."""
+        entity_reg = er.async_get(self.hass)
+        count = 0
+        for entity in entity_reg.entities.values():
+            if async_should_expose(self.hass, "conversation", entity.entity_id):
+                count += 1
+        return count
+
     async def refresh_index(self) -> None:
         """Generate fresh index from current system state."""
         start_time = datetime.now()
