@@ -51,6 +51,11 @@ from .const import (
     CONF_ENABLE_GAP_FILLING,
     CONF_OLLAMA_KEEP_ALIVE,
     CONF_OLLAMA_NUM_CTX,
+    CONF_ENABLE_PRE_RESOLVE,
+    CONF_PRE_RESOLVE_THRESHOLD,
+    CONF_PRE_RESOLVE_MARGIN,
+    CONF_ENABLE_FAST_PATH,
+    CONF_FAST_PATH_LANGUAGE,
     SERVER_TYPE_LMSTUDIO,
     SERVER_TYPE_LLAMACPP,
     SERVER_TYPE_OLLAMA,
@@ -81,11 +86,17 @@ from .const import (
     DEFAULT_ENABLE_GAP_FILLING,
     DEFAULT_OLLAMA_KEEP_ALIVE,
     DEFAULT_OLLAMA_NUM_CTX,
+    DEFAULT_ENABLE_PRE_RESOLVE,
+    DEFAULT_PRE_RESOLVE_THRESHOLD,
+    DEFAULT_PRE_RESOLVE_MARGIN,
+    DEFAULT_ENABLE_FAST_PATH,
+    DEFAULT_FAST_PATH_LANGUAGE,
     DEFAULT_API_KEY,
     OPENAI_BASE_URL,
     GEMINI_BASE_URL,
     OPENROUTER_BASE_URL,
 )
+from .fast_path import get_available_languages
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -594,6 +605,20 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_CONTROL_HA, default=DEFAULT_CONTROL_HA): bool,
             vol.Required(CONF_MAX_ITERATIONS, default=DEFAULT_MAX_ITERATIONS): vol.Coerce(int),
             vol.Required(CONF_DEBUG_MODE, default=DEFAULT_DEBUG_MODE): bool,
+            vol.Optional(CONF_ENABLE_PRE_RESOLVE, default=DEFAULT_ENABLE_PRE_RESOLVE): bool,
+            vol.Optional(CONF_PRE_RESOLVE_THRESHOLD, default=DEFAULT_PRE_RESOLVE_THRESHOLD): vol.All(
+                vol.Coerce(float), vol.Range(min=0.5, max=1.0)
+            ),
+            vol.Optional(CONF_ENABLE_FAST_PATH, default=DEFAULT_ENABLE_FAST_PATH): bool,
+            vol.Optional(CONF_FAST_PATH_LANGUAGE, default=DEFAULT_FAST_PATH_LANGUAGE): SelectSelector(
+                SelectSelectorConfig(
+                    options=[{"value": "auto", "label": "Auto-detect"}] + [
+                        {"value": lang, "label": lang.upper()}
+                        for lang in get_available_languages()
+                    ],
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
         }
 
         # Add Ollama-specific fields
@@ -929,6 +954,38 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                     CONF_DEBUG_MODE,
                     default=options.get(CONF_DEBUG_MODE, data.get(CONF_DEBUG_MODE, DEFAULT_DEBUG_MODE))
                 ): bool,
+
+                # 13. Entity Pre-Resolution
+                vol.Optional(
+                    CONF_ENABLE_PRE_RESOLVE,
+                    default=options.get(CONF_ENABLE_PRE_RESOLVE, data.get(CONF_ENABLE_PRE_RESOLVE, DEFAULT_ENABLE_PRE_RESOLVE))
+                ): bool,
+
+                # 14. Pre-Resolution Threshold
+                vol.Optional(
+                    CONF_PRE_RESOLVE_THRESHOLD,
+                    default=options.get(CONF_PRE_RESOLVE_THRESHOLD, data.get(CONF_PRE_RESOLVE_THRESHOLD, DEFAULT_PRE_RESOLVE_THRESHOLD))
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=1.0)),
+
+                # 15. Fast Path
+                vol.Optional(
+                    CONF_ENABLE_FAST_PATH,
+                    default=options.get(CONF_ENABLE_FAST_PATH, data.get(CONF_ENABLE_FAST_PATH, DEFAULT_ENABLE_FAST_PATH))
+                ): bool,
+
+                # 16. Fast Path Language
+                vol.Optional(
+                    CONF_FAST_PATH_LANGUAGE,
+                    default=options.get(CONF_FAST_PATH_LANGUAGE, data.get(CONF_FAST_PATH_LANGUAGE, DEFAULT_FAST_PATH_LANGUAGE))
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[{"value": "auto", "label": "Auto-detect"}] + [
+                            {"value": lang, "label": lang.upper()}
+                            for lang in get_available_languages()
+                        ],
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
         })
 
         # Add Ollama-specific fields to options

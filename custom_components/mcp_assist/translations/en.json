@@ -39,7 +39,11 @@
           "response_mode": "Response Mode",
           "debug_mode": "Debug Mode",
           "ollama_keep_alive": "Ollama Keep Alive",
-          "ollama_num_ctx": "Ollama Context Window"
+          "ollama_num_ctx": "Ollama Context Window",
+          "enable_pre_resolve": "Enable Entity Pre-Resolution",
+          "pre_resolve_threshold": "Pre-Resolution Similarity Threshold",
+          "enable_fast_path": "Enable Fast Path",
+          "fast_path_language": "Fast Path Language"
         }
       },
       "mcp_server": {
@@ -90,7 +94,11 @@
           "response_mode": "Response Mode",
           "debug_mode": "Debug Mode",
           "ollama_keep_alive": "Ollama Keep Alive",
-          "ollama_num_ctx": "Ollama Context Window"
+          "ollama_num_ctx": "Ollama Context Window",
+          "enable_pre_resolve": "Enable Entity Pre-Resolution",
+          "pre_resolve_threshold": "Pre-Resolution Similarity Threshold",
+          "enable_fast_path": "Enable Fast Path",
+          "fast_path_language": "Fast Path Language"
         }
       },
       "mcp_server": {
