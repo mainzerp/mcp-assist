@@ -87,6 +87,7 @@ from .const import (
 )
 from .conversation_history import ConversationHistory
 from .fast_path import FastPathProcessor, is_fast_path_candidate, KeywordLoader
+from .statistics import MCPAssistStatistics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -382,7 +383,14 @@ class MCPAssistConversationEntity(ConversationEntity):
         self, user_input: ConversationInput
     ) -> ConversationResult:
         """Process user input and return response."""
+        import time
+
         _LOGGER.info("🎤 Voice request started - Processing: %s", user_input.text)
+
+        # Get statistics manager
+        stats: MCPAssistStatistics | None = self.hass.data.get(DOMAIN, {}).get("statistics")
+        if stats:
+            stats.record_request()
 
         try:
             _LOGGER.debug("Getting conversation ID...")
@@ -398,14 +406,23 @@ class MCPAssistConversationEntity(ConversationEntity):
             pre_resolved: Dict[str, str] = {}
             if self.enable_pre_resolve:
                 pre_resolved = await self._pre_resolve_entities(user_input.text)
+                # Record pre-resolve statistics
+                if stats:
+                    stats.record_pre_resolve_attempt(bool(pre_resolved))
                 if pre_resolved and self.debug_mode:
                     _LOGGER.info(f"🎯 Pre-resolved {len(pre_resolved)} entities: {pre_resolved}")
 
             # Try Fast Path for simple commands (before LLM call)
             if self.enable_fast_path:
+                fast_path_start = time.perf_counter()
                 fast_path_result = await self._try_fast_path(user_input.text, pre_resolved)
                 if fast_path_result and fast_path_result.handled:
                     if fast_path_result.success:
+                        # Record Fast Path success with timing
+                        fast_path_duration_ms = (time.perf_counter() - fast_path_start) * 1000
+                        if stats:
+                            stats.record_fast_path_hit(fast_path_duration_ms)
+
                         _LOGGER.info("⚡ Fast Path handled command successfully")
                         # Update history with Fast Path interaction
                         self.history.add_turn(
@@ -425,7 +442,9 @@ class MCPAssistConversationEntity(ConversationEntity):
                     else:
                         if self.debug_mode:
                             _LOGGER.debug("⚡ Fast Path attempted but failed: %s", fast_path_result.error)
-                        # Fall through to LLM
+                        # Record Fast Path miss and fall through to LLM
+                        if stats:
+                            stats.record_fast_path_miss()
 
             # Build pre-resolved hint for LLM system prompt
             pre_resolved_hint = ""
@@ -448,10 +467,20 @@ class MCPAssistConversationEntity(ConversationEntity):
                     content_len = len(msg.get('content', '')) if msg.get('content') else 0
                     _LOGGER.info(f"  Message {i}: role={role}, content_length={content_len}")
 
-            # Call LLM API
+            # Call LLM API with timing
             _LOGGER.info(f"📡 Calling {self.server_type} API...")
-            response_text = await self._call_llm(messages)
-            _LOGGER.info(f"✅ {self.server_type} response received, length: %d", len(response_text))
+            llm_start = time.perf_counter()
+            try:
+                response_text = await self._call_llm(messages)
+                llm_duration_ms = (time.perf_counter() - llm_start) * 1000
+                if stats:
+                    # Record LLM call (tokens will be 0 for now, can be enhanced later)
+                    stats.record_llm_call(llm_duration_ms, tokens=0)
+                _LOGGER.info(f"✅ {self.server_type} response received, length: %d", len(response_text))
+            except Exception as llm_error:
+                if stats:
+                    stats.record_llm_error()
+                raise llm_error
 
             # Parse response and execute any Home Assistant actions
             actions_taken = await self._execute_actions(response_text, user_input)

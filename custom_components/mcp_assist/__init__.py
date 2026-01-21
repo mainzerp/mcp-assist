@@ -29,10 +29,11 @@ from .const import (
 )
 from .mcp_server import MCPServer
 from .index_manager import IndexManager
+from .statistics import MCPAssistStatistics
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.CONVERSATION]
+PLATFORMS = [Platform.CONVERSATION, Platform.SENSOR]
 
 
 async def _migrate_brave_search_tool_name(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -164,6 +165,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Create lock for server initialization if it doesn't exist
     if "server_init_lock" not in hass.data[DOMAIN]:
         hass.data[DOMAIN]["server_init_lock"] = asyncio.Lock()
+
+    # Create shared statistics manager if it doesn't exist
+    if "statistics" not in hass.data[DOMAIN]:
+        hass.data[DOMAIN]["statistics"] = MCPAssistStatistics()
+        _LOGGER.info("Created shared statistics manager")
 
     try:
         # Use lock to prevent race condition when multiple profiles load simultaneously
