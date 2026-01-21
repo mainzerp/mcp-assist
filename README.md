@@ -93,7 +93,7 @@ You: "Turn on the kitchen light"
 | Confidence Threshold | 0.90 | How similar a name must be to match |
 | Match Margin | 0.08 | How much better the best match must be than alternatives |
 
-## Fast Path for Simple Commands (v0.11.0+)
+## Fast Path for Simple Commands
 
 Fast Path handles simple commands **without calling the LLM at all** - instant responses in ~50ms instead of 1-3 seconds.
 
