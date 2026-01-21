@@ -56,6 +56,7 @@ from .const import (
     CONF_PRE_RESOLVE_MARGIN,
     CONF_ENABLE_FAST_PATH,
     CONF_FAST_PATH_LANGUAGE,
+    CONF_ENABLE_PARALLEL_TOOLS,
     SERVER_TYPE_LMSTUDIO,
     SERVER_TYPE_LLAMACPP,
     SERVER_TYPE_OLLAMA,
@@ -91,6 +92,7 @@ from .const import (
     DEFAULT_PRE_RESOLVE_MARGIN,
     DEFAULT_ENABLE_FAST_PATH,
     DEFAULT_FAST_PATH_LANGUAGE,
+    DEFAULT_ENABLE_PARALLEL_TOOLS,
     DEFAULT_API_KEY,
     OPENAI_BASE_URL,
     GEMINI_BASE_URL,
@@ -619,6 +621,7 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     mode=SelectSelectorMode.DROPDOWN,
                 )
             ),
+            vol.Optional(CONF_ENABLE_PARALLEL_TOOLS, default=DEFAULT_ENABLE_PARALLEL_TOOLS): bool,
         }
 
         # Add Ollama-specific fields
@@ -981,7 +984,13 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                     )
                 ),
 
-                # 16. Debug Mode (at the bottom)
+                # 16. Parallel Tool Execution
+                vol.Optional(
+                    CONF_ENABLE_PARALLEL_TOOLS,
+                    default=options.get(CONF_ENABLE_PARALLEL_TOOLS, data.get(CONF_ENABLE_PARALLEL_TOOLS, DEFAULT_ENABLE_PARALLEL_TOOLS))
+                ): bool,
+
+                # 17. Debug Mode (at the bottom)
                 vol.Required(
                     CONF_DEBUG_MODE,
                     default=options.get(CONF_DEBUG_MODE, data.get(CONF_DEBUG_MODE, DEFAULT_DEBUG_MODE))

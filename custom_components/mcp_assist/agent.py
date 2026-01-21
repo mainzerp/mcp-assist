@@ -50,6 +50,7 @@ from .const import (
     CONF_PRE_RESOLVE_MARGIN,
     CONF_ENABLE_FAST_PATH,
     CONF_FAST_PATH_LANGUAGE,
+    CONF_ENABLE_PARALLEL_TOOLS,
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_TECHNICAL_PROMPT,
     DEFAULT_DEBUG_MODE,
@@ -73,6 +74,7 @@ from .const import (
     DEFAULT_PRE_RESOLVE_MARGIN,
     DEFAULT_ENABLE_FAST_PATH,
     DEFAULT_FAST_PATH_LANGUAGE,
+    DEFAULT_ENABLE_PARALLEL_TOOLS,
     SERVER_TYPE_LMSTUDIO,
     SERVER_TYPE_LLAMACPP,
     SERVER_TYPE_OLLAMA,
@@ -307,6 +309,14 @@ class MCPAssistConversationEntity(ConversationEntity):
             # Get language from Home Assistant configuration
             return self.hass.config.language[:2].lower()
         return lang
+
+    @property
+    def enable_parallel_tools(self) -> bool:
+        """Get enable_parallel_tools parameter."""
+        return self.entry.options.get(
+            CONF_ENABLE_PARALLEL_TOOLS,
+            self.entry.data.get(CONF_ENABLE_PARALLEL_TOOLS, DEFAULT_ENABLE_PARALLEL_TOOLS)
+        )
 
     @property
     def search_provider(self) -> str:
@@ -1154,8 +1164,127 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.debug(f"TTS not available or failed: {e}")
             # Don't fail the whole request if TTS fails
 
+    # Read-only tools that are safe to execute in parallel
+    PARALLEL_SAFE_TOOLS = {
+        "discover_entities", "get_entity_details", "list_areas", "list_domains",
+        "search", "read_url", "get_weather", "get_calendar"
+    }
+
     async def _execute_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Execute a list of tool calls and return results in OpenAI format."""
+        """Execute a list of tool calls and return results in OpenAI format.
+        
+        When parallel_tools is enabled, read-only tools are executed in parallel
+        for better performance. Action tools are still executed sequentially.
+        """
+        if not self.enable_parallel_tools or len(tool_calls) <= 1:
+            # Sequential execution (original behavior)
+            return await self._execute_tool_calls_sequential(tool_calls)
+        
+        # Parallel execution: categorize tools
+        parallel_calls = []
+        sequential_calls = []
+        
+        for tool_call in tool_calls:
+            function = tool_call.get("function", {})
+            tool_name = function.get("name", "")
+            
+            if tool_name in self.PARALLEL_SAFE_TOOLS:
+                parallel_calls.append(tool_call)
+            else:
+                sequential_calls.append(tool_call)
+        
+        results = []
+        
+        # Execute parallel-safe tools concurrently
+        if parallel_calls:
+            if self.debug_mode:
+                _LOGGER.info(f"🚀 Executing {len(parallel_calls)} tool(s) in parallel")
+            
+            parallel_tasks = [
+                self._execute_single_tool_call(call) for call in parallel_calls
+            ]
+            parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+            
+            for call, result in zip(parallel_calls, parallel_results):
+                if isinstance(result, Exception):
+                    tool_call_id = call.get("id", f"call_{uuid.uuid4().hex[:8]}")
+                    function = call.get("function", {})
+                    tool_name = function.get("name", "unknown")
+                    _LOGGER.error(f"Error executing parallel tool {tool_name}: {result}")
+                    if self.server_type == SERVER_TYPE_OLLAMA:
+                        results.append({
+                            "role": "tool",
+                            "content": json.dumps({"error": str(result)})
+                        })
+                    else:
+                        results.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "content": json.dumps({"error": str(result)})
+                        })
+                else:
+                    results.append(result)
+        
+        # Execute action tools sequentially
+        if sequential_calls:
+            if self.debug_mode:
+                _LOGGER.info(f"📞 Executing {len(sequential_calls)} tool(s) sequentially")
+            
+            sequential_results = await self._execute_tool_calls_sequential(sequential_calls)
+            results.extend(sequential_results)
+        
+        return results
+
+    async def _execute_single_tool_call(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a single tool call and return result."""
+        tool_call_id = tool_call.get("id", f"call_{uuid.uuid4().hex[:8]}")
+        function = tool_call.get("function", {})
+        tool_name = function.get("name")
+        arguments_str = function.get("arguments", "{}")
+
+        _LOGGER.info(f"📞 Processing tool call {tool_call_id}: {tool_name}")
+
+        # Parse arguments based on server type
+        if self.server_type == SERVER_TYPE_OLLAMA:
+            arguments = arguments_str if isinstance(arguments_str, dict) else json.loads(arguments_str) if arguments_str else {}
+        else:
+            arguments = json.loads(arguments_str) if arguments_str else {}
+
+        # Execute the tool
+        result = await self._call_mcp_tool(tool_name, arguments)
+
+        # Format result for OpenAI
+        if "error" in result:
+            content = json.dumps({"error": result["error"]})
+        else:
+            content = result.get("result", "")
+
+        # Check if this is the conversation state tool
+        if tool_name == "set_conversation_state" and content:
+            if "conversation_state:true" in content.lower():
+                self._expecting_response = True
+                _LOGGER.debug("🔄 Conversation will continue - expecting response")
+            elif "conversation_state:false" in content.lower():
+                self._expecting_response = False
+                _LOGGER.debug("🔄 Conversation will close - not expecting response")
+
+        _LOGGER.info(f"✅ Tool {tool_name} executed successfully")
+
+        # Format result based on server type
+        if self.server_type == SERVER_TYPE_OLLAMA:
+            return {
+                "role": "tool",
+                "content": content if content is not None else ""
+            }
+        else:
+            return {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": content if content is not None else ""
+            }
+
+    async def _execute_tool_calls_sequential(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Execute tool calls sequentially (original behavior)."""
         results = []
 
         for tool_call in tool_calls:

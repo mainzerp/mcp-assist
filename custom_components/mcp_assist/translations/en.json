@@ -43,7 +43,8 @@
           "enable_pre_resolve": "Enable Entity Pre-Resolution",
           "pre_resolve_threshold": "Pre-Resolution Similarity Threshold",
           "enable_fast_path": "Enable Fast Path",
-          "fast_path_language": "Fast Path Language"
+          "fast_path_language": "Fast Path Language",
+          "enable_parallel_tools": "Enable Parallel Tool Execution"
         }
       },
       "mcp_server": {
@@ -98,7 +99,8 @@
           "enable_pre_resolve": "Enable Entity Pre-Resolution",
           "pre_resolve_threshold": "Pre-Resolution Similarity Threshold",
           "enable_fast_path": "Enable Fast Path",
-          "fast_path_language": "Fast Path Language"
+          "fast_path_language": "Fast Path Language",
+          "enable_parallel_tools": "Enable Parallel Tool Execution"
         }
       },
       "mcp_server": {
