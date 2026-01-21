@@ -5,6 +5,7 @@ A Home Assistant conversation agent that uses MCP (Model Context Protocol) for e
 ## Key Features
 
 - ✅ **95% Token Reduction**: Uses MCP tools for dynamic entity discovery instead of sending all entities
+- ✅ **Fast Path for Simple Commands**: Instant responses (~50ms) for common commands without calling the LLM
 - ✅ **Instant Entity Recognition**: Pre-resolves device names before the LLM call - faster responses, fewer API calls
 - ✅ **No Entity Dumps**: Never sends 12,000+ token entity lists to the LLM
 - ✅ **Smart Entity Index**: Pre-generated system structure index (~400-800 tokens) for context-aware queries
@@ -14,6 +15,7 @@ A Home Assistant conversation agent that uses MCP (Model Context Protocol) for e
 - ✅ **Web Search Tools**: Optional Brave Search integration for current information
 - ✅ **Works with 1000+ Entities**: Efficient even with large Home Assistant installations
 - ✅ **Multi-Profile Support**: Run multiple conversation agents with different models
+- ✅ **Multi-Language**: Fast Path supports DE, EN, FR, ES, NL with custom keywords
 
 ## The Problem MCP Assist Solves
 
@@ -90,6 +92,79 @@ You: "Turn on the kitchen light"
 | Enable Pre-Resolution | On | Turn the feature on/off |
 | Confidence Threshold | 0.90 | How similar a name must be to match |
 | Match Margin | 0.08 | How much better the best match must be than alternatives |
+
+## Fast Path for Simple Commands (v0.11.0+)
+
+Fast Path handles simple commands **without calling the LLM at all** - instant responses in ~50ms instead of 1-3 seconds.
+
+### How It Works
+
+```
+Traditional:  User → Pre-Resolution → LLM → Action → Response (1-3 sec)
+Fast Path:    User → Pre-Resolution → Fast Path → Response (~50ms)
+```
+
+### Supported Commands
+
+| Command Type | Examples |
+|--------------|----------|
+| **On/Off** | "Kitchen light on", "Turn off bedroom" |
+| **Toggle** | "Toggle the fan" |
+| **Open/Close** | "Open garage door", "Close blinds" |
+| **Lock/Unlock** | "Lock front door" |
+| **Brightness** | "Dim living room to 50%", "Bedroom 30%" |
+| **Temperature** | "Set thermostat to 22°", "Heating 20 degrees" |
+| **Position** | "Blinds to 40%", "Shutter 80%" |
+| **Color Temp** | "Warm light in kitchen", "Daylight in office" |
+
+### Multi-Language Support
+
+Fast Path includes keywords for 5 languages out of the box:
+
+| Language | Examples |
+|----------|----------|
+| 🇩🇪 German | "Küche an", "Dimme Wohnzimmer auf 50%" |
+| 🇬🇧 English | "Kitchen on", "Dim living room to 50%" |
+| 🇫🇷 French | "Allumer cuisine", "Salon à 50%" |
+| 🇪🇸 Spanish | "Encender cocina", "Sala al 50%" |
+| 🇳🇱 Dutch | "Keuken aan", "Woonkamer op 50%" |
+
+### Custom Keywords
+
+Add your own keywords by creating `custom_components/mcp_assist/fast_path/keywords/custom.yaml`:
+
+```yaml
+actions:
+  turn_on:
+    de:
+      - anknipsen
+      - hochfahren
+    en:
+      - fire up
+```
+
+### When Fast Path Falls Back to LLM
+
+Fast Path gracefully falls back to the LLM for:
+- Questions ("Is the light on?", "What's the temperature?")
+- Complex requests (more than ~12 words)
+- Unknown entities (not found by Pre-Resolution)
+- Unrecognized actions
+
+### Settings
+
+| Setting | Default | What it does |
+|---------|---------|-------------|
+| Enable Fast Path | On | Turn the feature on/off |
+| Fast Path Language | Auto | Auto-detect from HA config, or select manually |
+
+### Performance
+
+| Path | Response Time | Token Cost |
+|------|---------------|------------|
+| **Fast Path** | ~50ms | 0 tokens |
+| LLM (local) | 500-2000ms | ~400 tokens |
+| LLM (cloud) | 1000-3000ms | ~400 tokens |
 
 ## Requirements
 
@@ -245,6 +320,8 @@ You: "Turn on the kitchen light"
 - **Enable Pre-Resolution**: Automatically recognize device names before LLM call for faster responses (default: enabled)
 - **Pre-Resolution Threshold**: How confident the match must be (0.5-1.0, default: 0.90)
 - **Pre-Resolution Margin**: How much better the best match must be than the second-best (0.0-0.5, default: 0.08)
+- **Enable Fast Path**: Handle simple commands without LLM for instant responses (default: enabled)
+- **Fast Path Language**: Language for keywords (auto-detect from HA, or DE/EN/FR/ES/NL)
 
 ### Temperature Settings
 
