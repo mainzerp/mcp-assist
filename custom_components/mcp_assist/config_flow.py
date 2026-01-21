@@ -949,31 +949,25 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                     default=options.get(CONF_MAX_ITERATIONS, data.get(CONF_MAX_ITERATIONS, DEFAULT_MAX_ITERATIONS))
                 ): vol.Coerce(int),
 
-                # 12. Debug Mode
-                vol.Required(
-                    CONF_DEBUG_MODE,
-                    default=options.get(CONF_DEBUG_MODE, data.get(CONF_DEBUG_MODE, DEFAULT_DEBUG_MODE))
-                ): bool,
-
-                # 13. Entity Pre-Resolution
+                # 12. Entity Pre-Resolution
                 vol.Optional(
                     CONF_ENABLE_PRE_RESOLVE,
                     default=options.get(CONF_ENABLE_PRE_RESOLVE, data.get(CONF_ENABLE_PRE_RESOLVE, DEFAULT_ENABLE_PRE_RESOLVE))
                 ): bool,
 
-                # 14. Pre-Resolution Threshold
+                # 13. Pre-Resolution Threshold
                 vol.Optional(
                     CONF_PRE_RESOLVE_THRESHOLD,
                     default=options.get(CONF_PRE_RESOLVE_THRESHOLD, data.get(CONF_PRE_RESOLVE_THRESHOLD, DEFAULT_PRE_RESOLVE_THRESHOLD))
                 ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=1.0)),
 
-                # 15. Fast Path
+                # 14. Fast Path
                 vol.Optional(
                     CONF_ENABLE_FAST_PATH,
                     default=options.get(CONF_ENABLE_FAST_PATH, data.get(CONF_ENABLE_FAST_PATH, DEFAULT_ENABLE_FAST_PATH))
                 ): bool,
 
-                # 16. Fast Path Language
+                # 15. Fast Path Language
                 vol.Optional(
                     CONF_FAST_PATH_LANGUAGE,
                     default=options.get(CONF_FAST_PATH_LANGUAGE, data.get(CONF_FAST_PATH_LANGUAGE, DEFAULT_FAST_PATH_LANGUAGE))
@@ -986,6 +980,12 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                         mode=SelectSelectorMode.DROPDOWN,
                     )
                 ),
+
+                # 16. Debug Mode (at the bottom)
+                vol.Required(
+                    CONF_DEBUG_MODE,
+                    default=options.get(CONF_DEBUG_MODE, data.get(CONF_DEBUG_MODE, DEFAULT_DEBUG_MODE))
+                ): bool,
         })
 
         # Add Ollama-specific fields to options
