@@ -3,7 +3,7 @@
 
 actions:
   turn_on:
-    - on
+    # Removed: 'on' alone (matches 'on the table')
     - activate
     - enable
     - start
@@ -11,7 +11,7 @@ actions:
     - turn on
 
   turn_off:
-    - off
+    # Removed: 'off' alone (matches 'off the shelf')
     - deactivate
     - disable
     - stop
@@ -20,20 +20,21 @@ actions:
 
   toggle:
     - toggle
-    - switch
     - flip
 
   open:
     - open
-    - up
+    # Removed: 'up' alone (matches 'up there')
     - raise
     - lift
+    - open up
 
   close:
     - close
-    - down
+    # Removed: 'down' alone (matches 'down there')
     - lower
     - shut
+    - close down
 
   lock:
     - lock

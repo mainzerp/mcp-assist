@@ -3,18 +3,20 @@
 
 actions:
   turn_on:
-    - aan
+    # Removed: 'aan' alone (matches 'aan de muur')
     - inschakelen
     - activeren
     - starten
     - aanzetten
+    - aan doen
 
   turn_off:
-    - uit
+    # Removed: 'uit' alone (matches 'uit de kast')
     - uitschakelen
     - deactiveren
     - stoppen
     - uitzetten
+    - uit doen
 
   toggle:
     - schakelen
@@ -24,12 +26,12 @@ actions:
   open:
     - openen
     - omhoog
-    - open
+    - open doen
 
   close:
     - sluiten
     - omlaag
-    - dicht
+    - dicht doen
 
   lock:
     - vergrendelen

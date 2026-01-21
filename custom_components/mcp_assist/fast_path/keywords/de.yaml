@@ -3,7 +3,7 @@
 
 actions:
   turn_on:
-    - an
+    # Removed: 'an' (matches preposition 'an der Wand')
     - ein
     - einschalten
     - anmachen
@@ -12,34 +12,32 @@ actions:
     - anschalten
 
   turn_off:
-    - aus
+    # Removed: 'aus' alone is ambiguous, kept compound forms
     - ausschalten
     - ausmachen
     - deaktivieren
     - stoppen
     - abschalten
+    - ausmachen
 
   toggle:
     - umschalten
     - wechseln
     - togglen
-    - schalten
 
   open:
     - öffnen
     - aufmachen
-    - auf
-    - hoch
+    # Removed: 'auf', 'hoch' (match prepositions like 'auf dem Tisch')
     - hochfahren
-    - rauf
     - rauffahren
 
   close:
     - schließen
     - zumachen
-    - zu
-    - runter
+    # Removed: 'zu' (matches preposition 'zu Hause')
     - runterfahren
+    - herunterfahren
 
   lock:
     - abschließen
