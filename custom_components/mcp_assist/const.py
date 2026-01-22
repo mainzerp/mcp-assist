@@ -43,6 +43,8 @@ CONF_PRE_RESOLVE_MARGIN = "pre_resolve_margin"
 CONF_ENABLE_FAST_PATH = "enable_fast_path"
 CONF_FAST_PATH_LANGUAGE = "fast_path_language"
 CONF_ENABLE_PARALLEL_TOOLS = "enable_parallel_tools"
+CONF_FOLLOW_UP_PHRASES = "follow_up_phrases"
+CONF_END_WORDS = "end_words"
 
 # Default values
 DEFAULT_SERVER_TYPE = "lmstudio"
@@ -82,6 +84,8 @@ DEFAULT_PRE_RESOLVE_MARGIN = 0.08  # Minimum margin to second-best match
 DEFAULT_ENABLE_FAST_PATH = True  # Enable Fast Path for simple commands
 DEFAULT_FAST_PATH_LANGUAGE = "auto"  # Auto-detect language from HA config
 DEFAULT_ENABLE_PARALLEL_TOOLS = True  # Enable parallel tool execution
+DEFAULT_FOLLOW_UP_PHRASES = "anything else, what else, would you, do you, should i, can i, which, how can, what about, is there"
+DEFAULT_END_WORDS = "stop, cancel, no, nope, thanks, thank you, bye, goodbye, done, never mind, nevermind, forget it, that's all, that's it"
 
 # MCP Server settings
 MCP_SERVER_NAME = "ha-entity-discovery"
@@ -90,6 +94,39 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 # Entity discovery limits
 MAX_ENTITIES_PER_DISCOVERY = 50
 MAX_DISCOVERY_RESULTS = 100
+
+RESPONSE_MODE_INSTRUCTIONS = {
+    "none": """## Follow-up Questions
+Do NOT ask follow-up questions. Complete the task and end immediately.
+Use the set_conversation_state tool to indicate you're not expecting a response.
+
+## Ending Conversations
+Always end after completing the task.""",
+
+    "default": """## Follow-up Questions
+Generate contextually appropriate follow-up questions naturally:
+- After single device actions: Create a natural follow-up asking if the user needs help with anything else (vary phrasing each time)
+- When reporting adjustable status: Spontaneously suggest adjusting it in a natural way
+- For partial completions: Ask if the user wants you to complete the remaining tasks
+Always vary your phrasing - never repeat the same question twice in a conversation.
+
+Do NOT ask generic "anything else?" or "can I help with anything else?" questions without specific context.
+When asking a question, use the set_conversation_state tool to indicate you're expecting a response.
+
+## Ending Conversations
+After completing the task, end the conversation unless a natural follow-up is relevant.""",
+
+    "always": """## Follow-up Questions
+Generate contextually appropriate follow-up questions naturally:
+- After single device actions: Create a natural follow-up asking if the user needs help with anything else (vary phrasing each time)
+- When reporting adjustable status: Spontaneously suggest adjusting it in a natural way
+- For partial completions: Ask if the user wants you to complete the remaining tasks
+Always vary your phrasing - never repeat the same question twice in a conversation.
+When asking a question, use the set_conversation_state tool to indicate you're expecting a response.
+
+## Ending Conversations
+When user indicates they're done, acknowledge and end naturally."""
+}
 
 DEFAULT_TECHNICAL_PROMPT = """You are controlling a Home Assistant smart home system. You have access to sensors, lights, switches, and other devices throughout the home.
 
@@ -145,15 +182,7 @@ For ANY device request:
 - Use Friendly Names (e.g., "Living Room Light"), never entity IDs
 - Use natural language for states ("on" → "turned on", "home" → "at home")
 
-## Follow-up Questions
-Generate contextually appropriate follow-up questions naturally:
-- After single device actions: Create a natural follow-up asking if the user needs help with anything else (vary phrasing each time)
-- When reporting adjustable status: Spontaneously suggest adjusting it in a natural way
-- For partial completions: Ask if the user wants you to complete the remaining tasks
-Always vary your phrasing - never repeat the same question twice in a conversation.
-
-## Ending Conversations
-When user indicates they're done - do not respond further.
+{response_mode}
 
 ## Index
 {index}
