@@ -908,9 +908,36 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.debug("IndexManager not available for pre-resolution")
             return []
         
+        # Stop words to filter out (common words that don't identify entities)
+        stop_words = {
+            # German
+            'ist', 'die', 'der', 'das', 'ein', 'eine', 'einen', 'einem', 'einer',
+            'und', 'oder', 'nicht', 'von', 'zu', 'den', 'dem', 'des', 'auf', 'an',
+            'in', 'mit', 'nach', 'bei', 'aus', 'wie', 'was', 'wer', 'wo', 'wann',
+            'ob', 'wenn', 'weil', 'als', 'so', 'auch', 'nur', 'noch', 'aber', 'doch',
+            'schon', 'mal', 'mir', 'mich', 'dir', 'dich', 'sich', 'uns', 'euch',
+            'meine', 'meinen', 'meiner', 'meinem', 'deine', 'deinen', 'seiner', 'seinem',
+            'alle', 'alles', 'jeder', 'jede', 'jedes', 'diesem', 'dieser', 'dieses',
+            'welche', 'welcher', 'welches', 'einige', 'manche', 'andere',
+            # Common action words (should not match entities)
+            'eingeschaltet', 'ausgeschaltet', 'einschalten', 'ausschalten',
+            'anmachen', 'ausmachen', 'aktivieren', 'deaktivieren',
+            'oeffnen', 'schliessen', 'starten', 'stoppen', 'setzen', 'stellen',
+            # English
+            'is', 'the', 'a', 'an', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+            'should', 'may', 'might', 'can', 'must', 'shall', 'to', 'of', 'in',
+            'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through',
+            'turned', 'turn', 'switch', 'switched', 'set', 'get', 'put',
+            'on', 'off', 'up', 'down', 'open', 'close', 'start', 'stop',
+        }
+        
         # Extract key terms from user text for searching
         user_text_normalized = self._normalize_text_for_matching(user_text)
         words = user_text_normalized.split()
+        
+        # Filter out stop words
+        words = [w for w in words if w not in stop_words and len(w) >= 3]
         
         if not words:
             return []
