@@ -511,15 +511,23 @@ class MCPAssistConversationEntity(ConversationEntity):
             history = self.history.get_history(conversation_id)
             _LOGGER.debug("History retrieved: %d turns", len(history))
 
-            # Pre-resolve entities FIRST (used by both Fast Path and LLM)
-            pre_resolved: Dict[str, str] = {}
+            # Pre-resolve entities with state FIRST (used by both Fast Path and LLM)
+            pre_resolved_with_state: List[Dict[str, Any]] = []
+            pre_resolved: Dict[str, str] = {}  # Legacy format for Fast Path
+            
             if self.enable_pre_resolve:
-                pre_resolved = await self._pre_resolve_entities(user_input.text)
+                pre_resolved_with_state = await self._pre_resolve_entities_with_state(user_input.text)
                 # Record pre-resolve statistics
                 if stats:
-                    stats.record_pre_resolve_attempt(bool(pre_resolved))
-                if pre_resolved and self.debug_mode:
-                    _LOGGER.info(f"🎯 Pre-resolved {len(pre_resolved)} entities: {pre_resolved}")
+                    stats.record_pre_resolve_attempt(bool(pre_resolved_with_state))
+                
+                # Build legacy format for Fast Path (highest scored entity per search term)
+                if pre_resolved_with_state:
+                    for match in pre_resolved_with_state:
+                        # Use entity name as key (simplified)
+                        name_key = match.get("name", "").lower()
+                        if name_key and match["entity_id"] not in pre_resolved.values():
+                            pre_resolved[name_key] = match["entity_id"]
 
             # Try Fast Path for simple commands (before LLM call)
             if self.enable_fast_path:
@@ -555,13 +563,24 @@ class MCPAssistConversationEntity(ConversationEntity):
                         if stats:
                             stats.record_fast_path_miss()
 
-            # Build pre-resolved hint for LLM system prompt
+            # Build pre-resolved hint for LLM system prompt WITH STATE
             pre_resolved_hint = ""
-            if pre_resolved:
-                hints = ", ".join([f'"{name}" = {entity_id}' for name, entity_id in pre_resolved.items()])
-                pre_resolved_hint = f"\n\n## Pre-resolved Entities for Current Request\n[Pre-resolved entities: {hints}]"
+            if pre_resolved_with_state:
+                entity_hints = []
+                for match in pre_resolved_with_state:
+                    hint = f'{match["entity_id"]} ("{match["name"]}", state: {match["state"]}'
+                    if match.get("area"):
+                        hint += f', area: {match["area"]}'
+                    hint += f', score: {match["score"]})'
+                    entity_hints.append(hint)
+                
+                pre_resolved_hint = (
+                    f"\n\n## Pre-resolved Entities for Current Request\n"
+                    f"The following entities match the user's request. Use their current state to answer directly without calling get_entity_details:\n"
+                    + "\n".join([f"- {h}" for h in entity_hints])
+                )
 
-            # Build system prompt with context (including pre-resolved entities)
+            # Build system prompt with context (including pre-resolved entities with state)
             system_prompt = await self._build_system_prompt_with_context(user_input, pre_resolved_hint)
             if self.debug_mode:
                 _LOGGER.info(f"📝 System prompt built, length: {len(system_prompt)} chars")
@@ -865,6 +884,67 @@ class MCPAssistConversationEntity(ConversationEntity):
             )
         
         return result
+
+    async def _pre_resolve_entities_with_state(self, user_text: str) -> List[Dict[str, Any]]:
+        """Pre-resolve entity references with state information.
+        
+        This uses the new find_matching_entities() method to get all matching
+        entities with relevance scores and current state.
+        
+        Args:
+            user_text: The user's input text
+            
+        Returns:
+            List of entity matches with state, sorted by score:
+            [
+                {"entity_id": "light.kuche", "name": "Küche", "state": "on", "area": "Küche", "domain": "light", "score": 85},
+                ...
+            ]
+        """
+        index_manager = self.hass.data.get(DOMAIN, {}).get("index_manager")
+        if not index_manager:
+            _LOGGER.debug("IndexManager not available for pre-resolution")
+            return []
+        
+        # Extract key terms from user text for searching
+        user_text_normalized = self._normalize_text_for_matching(user_text)
+        words = user_text_normalized.split()
+        
+        if not words:
+            return []
+        
+        # Try different n-grams to find the best matches
+        all_matches: Dict[str, Dict[str, Any]] = {}  # entity_id -> match info
+        
+        # Try progressively smaller n-grams
+        for n in range(min(4, len(words)), 0, -1):
+            for i in range(len(words) - n + 1):
+                search_term = ' '.join(words[i:i+n])
+                if len(search_term) < 3:
+                    continue
+                
+                matches = await index_manager.find_matching_entities(search_term, max_results=5)
+                
+                for match in matches:
+                    entity_id = match["entity_id"]
+                    # Keep the match with highest score for each entity
+                    if entity_id not in all_matches or match["score"] > all_matches[entity_id]["score"]:
+                        all_matches[entity_id] = match
+        
+        if not all_matches:
+            _LOGGER.debug("No entity matches found for pre-resolution")
+            return []
+        
+        # Sort by score and return top matches
+        results = sorted(all_matches.values(), key=lambda x: x["score"], reverse=True)[:5]
+        
+        if results:
+            _LOGGER.info(
+                f"🎯 Pre-resolved {len(results)} entities: " +
+                ", ".join([f"{m['name']} ({m['state']}, score:{m['score']})" for m in results])
+            )
+        
+        return results
 
     async def _pre_resolve_entities(self, user_text: str) -> Dict[str, str]:
         """Pre-resolve entity references in user text before LLM call.

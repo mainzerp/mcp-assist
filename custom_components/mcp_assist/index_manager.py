@@ -137,6 +137,144 @@ class IndexManager:
         
         return self._entity_names or {}
 
+    async def find_matching_entities(
+        self, 
+        search_term: str,
+        max_results: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Find all entities matching a search term with relevance scores and state.
+        
+        Args:
+            search_term: The term to search for (e.g. "küche", "wohnzimmer licht")
+            max_results: Maximum number of results to return
+            
+        Returns:
+            List of dicts with entity info, sorted by relevance score (highest first):
+            [
+                {
+                    "entity_id": "light.kuche_decke",
+                    "name": "Küche Decke",
+                    "state": "on",
+                    "area": "Küche",
+                    "domain": "light",
+                    "score": 85
+                },
+                ...
+            ]
+        """
+        # Lazy load entity names
+        if self._entity_names is None:
+            await self.refresh_index()
+        
+        if not self._entity_names:
+            return []
+        
+        search_normalized = self._normalize_text(search_term)
+        if not search_normalized:
+            return []
+        
+        search_words = set(search_normalized.split())
+        results: List[Dict[str, Any]] = []
+        seen_entities: set = set()  # Avoid duplicates
+        
+        entity_reg = er.async_get(self.hass)
+        area_reg = ar.async_get(self.hass)
+        
+        # Build area name lookup
+        area_names: Dict[str, str] = {}
+        for area in area_reg.areas.values():
+            area_names[area.id] = area.name
+        
+        for name, entity_id in self._entity_names.items():
+            # Skip if already processed this entity
+            if entity_id in seen_entities:
+                continue
+            
+            # Check if search term matches this name
+            if search_normalized not in name and name not in search_normalized:
+                # Check word overlap
+                name_words = set(name.split())
+                if not search_words.intersection(name_words):
+                    continue
+            
+            # Calculate relevance score
+            score = self._calculate_match_score(search_normalized, search_words, name, entity_id)
+            
+            if score < 30:  # Minimum threshold
+                continue
+            
+            # Get entity state and details
+            state_obj = self.hass.states.get(entity_id)
+            if not state_obj:
+                continue
+            
+            # Get area name
+            entity_entry = entity_reg.async_get(entity_id)
+            area_name = None
+            if entity_entry and entity_entry.area_id:
+                area_name = area_names.get(entity_entry.area_id)
+            
+            domain = entity_id.split('.')[0] if '.' in entity_id else ""
+            
+            results.append({
+                "entity_id": entity_id,
+                "name": state_obj.name or name,
+                "state": state_obj.state,
+                "area": area_name,
+                "domain": domain,
+                "score": score
+            })
+            seen_entities.add(entity_id)
+        
+        # Sort by score (highest first) and limit results
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:max_results]
+
+    def _calculate_match_score(
+        self, 
+        search_term: str,
+        search_words: set,
+        entity_name: str, 
+        entity_id: str
+    ) -> int:
+        """Calculate relevance score for an entity match.
+        
+        Scoring:
+        - Exact match: 100 points
+        - Contains search term: 70 points
+        - Word overlap: +15 points per matching word
+        - Area in entity_id: +10 points
+        - Actionable domain (light, switch, cover): +10 points
+        """
+        score = 0
+        name_words = set(entity_name.split())
+        
+        # Exact match
+        if search_term == entity_name:
+            score = 100
+        # Search term is contained in entity name
+        elif search_term in entity_name:
+            score = 70
+        # Entity name is contained in search term
+        elif entity_name in search_term:
+            score = 60
+        else:
+            # Word overlap scoring
+            overlap = search_words.intersection(name_words)
+            score = len(overlap) * 15
+        
+        # Bonus for actionable domains (lights, switches, covers)
+        domain = entity_id.split('.')[0] if '.' in entity_id else ""
+        if domain in ('light', 'switch', 'cover', 'fan', 'climate'):
+            score += 10
+        
+        # Bonus if search term appears in entity_id (indicates strong match)
+        entity_id_part = entity_id.split('.', 1)[1] if '.' in entity_id else ""
+        if search_term.replace(' ', '_') in entity_id_part or search_term.replace(' ', '') in entity_id_part:
+            score += 10
+        
+        return score
+
     async def generate_index(self) -> Dict[str, Any]:
         """Generate the system structure index.
 
