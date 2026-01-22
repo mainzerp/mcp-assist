@@ -191,16 +191,20 @@ class IndexManager:
                 continue
             
             # Check if search term matches this name
-            if search_normalized not in name and name not in search_normalized:
-                # Check word overlap
-                name_words = set(name.split())
-                if not search_words.intersection(name_words):
-                    continue
+            # Require: search term is a substring of name, OR name is substring of search,
+            # OR at least one complete word overlaps
+            is_substring_match = search_normalized in name or name in search_normalized
+            
+            name_words = set(name.split())
+            has_word_overlap = bool(search_words.intersection(name_words))
+            
+            if not is_substring_match and not has_word_overlap:
+                continue
             
             # Calculate relevance score
-            score = self._calculate_match_score(search_normalized, search_words, name, entity_id)
+            score = self._calculate_match_score(search_normalized, search_words, name, entity_id, has_word_overlap)
             
-            if score < 30:  # Minimum threshold
+            if score < 50:  # Minimum threshold - filter weak matches
                 continue
             
             # Get entity state and details
@@ -235,33 +239,45 @@ class IndexManager:
         search_term: str,
         search_words: set,
         entity_name: str, 
-        entity_id: str
+        entity_id: str,
+        has_word_overlap: bool = False
     ) -> int:
         """Calculate relevance score for an entity match.
         
         Scoring:
         - Exact match: 100 points
-        - Contains search term: 70 points
-        - Word overlap: +15 points per matching word
+        - Contains search term as complete word: 80 points
+        - Contains search term (substring): 70 points
+        - Word overlap: +20 points per matching word
         - Area in entity_id: +10 points
         - Actionable domain (light, switch, cover): +10 points
+        
+        Low scores (under 50) indicate weak matches that should probably be filtered.
         """
         score = 0
         name_words = set(entity_name.split())
         
-        # Exact match
+        # Exact match - highest priority
         if search_term == entity_name:
             score = 100
-        # Search term is contained in entity name
+        # Search term is contained as a complete word in entity name
+        elif search_term in name_words:
+            score = 80
+        # Search term is contained in entity name (substring)
         elif search_term in entity_name:
             score = 70
         # Entity name is contained in search term
         elif entity_name in search_term:
             score = 60
-        else:
-            # Word overlap scoring
+        elif has_word_overlap:
+            # Word overlap scoring - give points for each matching word
             overlap = search_words.intersection(name_words)
-            score = len(overlap) * 15
+            overlap_len = len(overlap)
+            if overlap_len > 0:
+                # Base score for word overlap
+                score = 40 + (overlap_len * 20)
+            else:
+                score = 0
         
         # Bonus for actionable domains (lights, switches, covers)
         domain = entity_id.split('.')[0] if '.' in entity_id else ""

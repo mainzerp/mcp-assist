@@ -576,8 +576,10 @@ class MCPAssistConversationEntity(ConversationEntity):
                 
                 pre_resolved_hint = (
                     f"\n\n## Pre-resolved Entities for Current Request\n"
-                    f"The following entities match the user's request. Use their current state to answer directly without calling get_entity_details:\n"
+                    f"These entities match the user's request with their CURRENT STATE already provided:\n"
                     + "\n".join([f"- {h}" for h in entity_hints])
+                    + "\n\nIMPORTANT: For status queries (is X on/off?), answer DIRECTLY using the state above. "
+                    f"Do NOT call get_entity_details or set_conversation_state - just respond with the answer."
                 )
 
             # Build system prompt with context (including pre-resolved entities with state)
