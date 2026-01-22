@@ -1710,8 +1710,16 @@ class MCPAssistConversationEntity(ConversationEntity):
         _LOGGER.info(f"🚀 Starting streaming {self.server_type} conversation")
 
         # Test streaming once and cache result
+        _LOGGER.debug(f"🔍 Checking streaming cache: hasattr={hasattr(self, '_streaming_available')}")
+        if hasattr(self, '_streaming_available'):
+            _LOGGER.debug(f"✅ Using cached streaming availability: {self._streaming_available}")
+        
         if not hasattr(self, '_streaming_available'):
+            _LOGGER.info("🧪 Running streaming test (not cached)")
             self._streaming_available = await self._test_streaming_basic()
+            _LOGGER.info(f"📝 Cached streaming result: {self._streaming_available}")
+        else:
+            _LOGGER.info(f"⚡ Streaming test skipped (cached: {self._streaming_available})")
 
         if not self._streaming_available:
             _LOGGER.warning("Streaming not available, falling back to HTTP")

@@ -124,13 +124,17 @@ class IndexManager:
 
         return self._index or {}
 
-    def get_entity_names(self) -> Dict[str, str]:
+    async def get_entity_names(self) -> Dict[str, str]:
         """Get the entity names mapping for pre-resolution.
         
         Returns:
             Dict mapping normalized friendly names to entity_ids.
             E.g. {"küchenlicht": "light.kitchen", "wohnzimmer lampe": "light.living_room"}
         """
+        # Lazy load: generate index if needed (which also builds entity names)
+        if self._entity_names is None:
+            await self.refresh_index()
+        
         return self._entity_names or {}
 
     async def generate_index(self) -> Dict[str, Any]:
