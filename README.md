@@ -117,7 +117,9 @@ The Smart Entity Index provides a lightweight (~400-800 tokens) snapshot of your
 **Step 4 - Advanced Settings:**
 - Temperature: Response randomness (0.0-1.0)
 - Max Response Tokens: Maximum length of responses
-- Response Mode: Smart / Always / None (follow-up question behavior)
+- Response Mode: None / Smart / Always (conversation continuation behavior)
+- Follow-up Phrases: Configurable phrases for pattern detection (default: "anything else, would you, can i", etc.)
+- End Conversation Words: Words/phrases that end conversations (default: "bye, thanks, stop", etc.)
 - Control Home Assistant: Enable/disable device control
 - Max Tool Iterations: How many tool calls allowed per request
 - Web Search Provider: Choose none, DuckDuckGo, or Brave Search
@@ -201,9 +203,11 @@ The Smart Entity Index provides a lightweight (~400-800 tokens) snapshot of your
 - **Max History Messages**: How many conversation turns to remember (default: 10)
 - **Max Tool Iterations**: Prevent infinite loops (default: 10)
 - **Response Mode**:
-  - **Smart** (default): LLM decides if follow-up needed
-  - **Always**: Always wait for follow-up
-  - **None**: Never wait for follow-up
+  - **None**: Never ask follow-ups, end immediately
+  - **Smart** (default): Contextual follow-ups when relevant, user can end with "bye"/"thanks"
+  - **Always**: Natural conversational follow-ups, user can end with "bye"/"thanks"
+- **Follow-up Phrases**: Comma-separated phrases for detecting when assistant wants to continue (configurable per profile)
+- **End Conversation Words**: Comma-separated words/phrases for user-initiated ending (configurable per profile)
 - **Enable Smart Entity Index**: Context-aware entity discovery with automatic gap-filling for uncommon devices (default: enabled)
 
 ### Temperature Settings
