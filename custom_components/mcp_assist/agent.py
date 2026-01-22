@@ -824,7 +824,7 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.debug("IndexManager not available for Fast Path")
             return None
         
-        entity_names = index_manager.get_entity_names()
+        entity_names = await index_manager.get_entity_names()
         if not entity_names:
             _LOGGER.debug("No entity names available for Fast Path")
             return None
@@ -888,7 +888,7 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.debug("IndexManager not available for pre-resolution")
             return resolved
         
-        entity_names = index_manager.get_entity_names()
+        entity_names = await index_manager.get_entity_names()
         if not entity_names:
             _LOGGER.debug("No entity names available for pre-resolution")
             return resolved
