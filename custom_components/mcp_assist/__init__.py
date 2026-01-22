@@ -166,11 +166,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if "server_init_lock" not in hass.data[DOMAIN]:
         hass.data[DOMAIN]["server_init_lock"] = asyncio.Lock()
 
-    # Create shared statistics manager if it doesn't exist
-    if "statistics" not in hass.data[DOMAIN]:
-        hass.data[DOMAIN]["statistics"] = MCPAssistStatistics()
-        _LOGGER.info("Created shared statistics manager")
-
     try:
         # Use lock to prevent race condition when multiple profiles load simultaneously
         async with hass.data[DOMAIN]["server_init_lock"]:
@@ -186,6 +181,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 index_manager = IndexManager(hass)
                 await index_manager.start()
                 hass.data[DOMAIN]["index_manager"] = index_manager
+                
+                # Create shared statistics manager with index manager callback
+                hass.data[DOMAIN]["statistics"] = MCPAssistStatistics(
+                    indexed_entities_callback=index_manager.get_exposed_entity_count
+                )
+                _LOGGER.info("Created shared statistics manager")
 
                 # Create and start MCP server
                 mcp_server = MCPServer(hass, mcp_port, entry)

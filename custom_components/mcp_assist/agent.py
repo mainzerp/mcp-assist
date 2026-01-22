@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import uuid
 from typing import Any, Dict, List, Optional, Literal
 
@@ -50,6 +51,7 @@ from .const import (
     CONF_PRE_RESOLVE_MARGIN,
     CONF_ENABLE_FAST_PATH,
     CONF_FAST_PATH_LANGUAGE,
+    CONF_ENABLE_PARALLEL_TOOLS,
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_TECHNICAL_PROMPT,
     DEFAULT_DEBUG_MODE,
@@ -73,6 +75,7 @@ from .const import (
     DEFAULT_PRE_RESOLVE_MARGIN,
     DEFAULT_ENABLE_FAST_PATH,
     DEFAULT_FAST_PATH_LANGUAGE,
+    DEFAULT_ENABLE_PARALLEL_TOOLS,
     SERVER_TYPE_LMSTUDIO,
     SERVER_TYPE_LLAMACPP,
     SERVER_TYPE_OLLAMA,
@@ -309,6 +312,14 @@ class MCPAssistConversationEntity(ConversationEntity):
         return lang
 
     @property
+    def enable_parallel_tools(self) -> bool:
+        """Get enable_parallel_tools parameter."""
+        return self.entry.options.get(
+            CONF_ENABLE_PARALLEL_TOOLS,
+            self.entry.data.get(CONF_ENABLE_PARALLEL_TOOLS, DEFAULT_ENABLE_PARALLEL_TOOLS)
+        )
+
+    @property
     def search_provider(self) -> str:
         """Get search provider (shared setting) with backward compatibility."""
         provider = self._get_shared_setting(CONF_SEARCH_PROVIDER, None)
@@ -378,6 +389,77 @@ class MCPAssistConversationEntity(ConversationEntity):
 
         await super().async_will_remove_from_hass()
         _LOGGER.info("Conversation entity unregistered: %s", self._attr_name)
+
+    def _get_server_display_name(self) -> str:
+        """Get friendly display name for the server type."""
+        return {
+            SERVER_TYPE_LMSTUDIO: "LM Studio",
+            SERVER_TYPE_LLAMACPP: "llama.cpp",
+            SERVER_TYPE_OLLAMA: "Ollama",
+            SERVER_TYPE_OPENAI: "OpenAI",
+            SERVER_TYPE_GEMINI: "Gemini",
+            SERVER_TYPE_ANTHROPIC: "Claude",
+            SERVER_TYPE_OPENROUTER: "OpenRouter",
+        }.get(self.server_type, "the LLM server")
+
+    def _get_friendly_error_message(self, error: Exception) -> str:
+        """Convert technical errors to user-friendly TTS messages."""
+        error_str = str(error).lower()
+        error_full = str(error)  # Keep original case for extracting details
+
+        # Category A: Connection/Network Errors
+        if any(x in error_str for x in ["connection", "refused", "cannot connect", "no route", "unreachable"]):
+            if self.server_type in [SERVER_TYPE_OPENAI, SERVER_TYPE_GEMINI, SERVER_TYPE_ANTHROPIC]:
+                return f"I couldn't reach {self._get_server_display_name()}'s API servers. Please check your internet connection and try again."
+            else:
+                return f"I couldn't connect to {self._get_server_display_name()} at {self.base_url_dynamic}. Please check that the server is running and the address is correct in your integration settings."
+
+        if "timeout" in error_str or "timed out" in error_str:
+            return f"The {self._get_server_display_name()} server took too long to respond. This might be because the model is slow or busy. Try again or consider using a faster model."
+
+        # Category B: Authentication
+        if any(x in error_str for x in ["401", "403", "unauthorized", "invalid_api_key", "invalid api key"]):
+            return f"Your {self._get_server_display_name()} API key is invalid or missing. Please check your API key in the integration settings."
+
+        if "insufficient_quota" in error_str or "permission denied" in error_str:
+            return f"Your {self._get_server_display_name()} account doesn't have permission for this operation. Check your account status and billing."
+
+        # Category C: Resource Limits
+        if "maximum context length" in error_str or "context_length_exceeded" in error_str or "too many tokens" in error_str:
+            # Try to extract token limit if present
+            token_match = re.search(r'(\d+)\s*tokens?', error_str)
+            if token_match:
+                return f"The conversation has exceeded the model's {token_match.group(1)} token limit. Start a new conversation or reduce the history limit in Advanced Settings."
+            return "The conversation has exceeded the model's token limit. Start a new conversation or reduce the history limit in Advanced Settings."
+
+        if "rate limit" in error_str or "429" in error_str or "too many requests" in error_str:
+            return f"You've hit {self._get_server_display_name()}'s rate limit. Wait a minute and try again, or upgrade your plan for higher limits."
+
+        if "quota exceeded" in error_str or "insufficient credits" in error_str:
+            return f"Your {self._get_server_display_name()} account has run out of credits or quota. Check your billing and add credits to continue."
+
+        # Category D: Model Errors
+        if "404" in error_str or ("model" in error_str and "not found" in error_str):
+            return f"The model '{self.model_name}' wasn't found on {self._get_server_display_name()}. Check that the model name is correct in your integration settings."
+
+        if self.server_type == SERVER_TYPE_OLLAMA and ("model not loaded" in error_str or "pull the model" in error_str):
+            return f"The model '{self.model_name}' isn't loaded in Ollama. Run 'ollama pull {self.model_name}' to download it first."
+
+        # Category E: MCP Errors
+        if f"localhost:{self.mcp_port}" in error_str or f"127.0.0.1:{self.mcp_port}" in error_str:
+            return f"I couldn't connect to the MCP server on port {self.mcp_port}. The integration may not have initialized correctly. Try restarting Home Assistant."
+
+        # Category F: Response Errors
+        if "empty response" in error_str or "no response" in error_str:
+            return f"The {self._get_server_display_name()} server returned an empty response. This sometimes happens with certain models. Try rephrasing your request."
+
+        if "json" in error_str and ("parse" in error_str or "decode" in error_str or "malformed" in error_str):
+            return f"I received a malformed response from {self._get_server_display_name()}. This might be a temporary server issue. Please try again."
+
+        # Category G: Generic fallback
+        # Extract first meaningful part of error (up to 100 chars, stop at newline)
+        error_snippet = error_full.split('\n')[0][:100]
+        return f"An unexpected error occurred while talking to {self._get_server_display_name()}. The error was: {error_snippet}. Check the Home Assistant logs for more details."
 
     async def async_process(
         self, user_input: ConversationInput
@@ -471,12 +553,11 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.info(f"📡 Calling {self.server_type} API...")
             llm_start = time.perf_counter()
             try:
-                response_text = await self._call_llm(messages)
+                response_text, tokens_used = await self._call_llm(messages)
                 llm_duration_ms = (time.perf_counter() - llm_start) * 1000
                 if stats:
-                    # Record LLM call (tokens will be 0 for now, can be enhanced later)
-                    stats.record_llm_call(llm_duration_ms, tokens=0)
-                _LOGGER.info(f"✅ {self.server_type} response received, length: %d", len(response_text))
+                    stats.record_llm_call(llm_duration_ms, tokens=tokens_used)
+                _LOGGER.info(f"✅ {self.server_type} response received, length: %d, tokens: %d", len(response_text), tokens_used)
             except Exception as llm_error:
                 if stats:
                     stats.record_llm_error()
@@ -536,7 +617,7 @@ class MCPAssistConversationEntity(ConversationEntity):
             intent_response = intent.IntentResponse(language=user_input.language)
             intent_response.async_set_error(
                 intent.IntentResponseErrorCode.UNKNOWN,
-                f"Sorry, I encountered an error: {err}"
+                self._get_friendly_error_message(err)
             )
 
             return ConversationResult(
@@ -1154,8 +1235,142 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.debug(f"TTS not available or failed: {e}")
             # Don't fail the whole request if TTS fails
 
+    # Read-only tools that are safe to execute in parallel
+    PARALLEL_SAFE_TOOLS = {
+        "discover_entities", "get_entity_details", "list_areas", "list_domains",
+        "search", "read_url", "get_weather", "get_calendar"
+    }
+
     async def _execute_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Execute a list of tool calls and return results in OpenAI format."""
+        """Execute a list of tool calls and return results in OpenAI format.
+        
+        When parallel_tools is enabled, read-only tools are executed in parallel
+        for better performance. Action tools are still executed sequentially.
+        """
+        if not self.enable_parallel_tools or len(tool_calls) <= 1:
+            # Sequential execution (original behavior)
+            return await self._execute_tool_calls_sequential(tool_calls)
+        
+        # Parallel execution: categorize tools
+        parallel_calls = []
+        sequential_calls = []
+        
+        for tool_call in tool_calls:
+            function = tool_call.get("function", {})
+            tool_name = function.get("name", "")
+            
+            if tool_name in self.PARALLEL_SAFE_TOOLS:
+                parallel_calls.append(tool_call)
+            else:
+                sequential_calls.append(tool_call)
+        
+        results = []
+        
+        # Execute parallel-safe tools concurrently
+        if parallel_calls:
+            if self.debug_mode:
+                _LOGGER.info(f"🚀 Executing {len(parallel_calls)} tool(s) in parallel")
+            
+            import time
+            start_time = time.perf_counter()
+            
+            parallel_tasks = [
+                self._execute_single_tool_call(call) for call in parallel_calls
+            ]
+            parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+            
+            actual_time_ms = (time.perf_counter() - start_time) * 1000
+            
+            for call, result in zip(parallel_calls, parallel_results):
+                if isinstance(result, Exception):
+                    tool_call_id = call.get("id", f"call_{uuid.uuid4().hex[:8]}")
+                    function = call.get("function", {})
+                    tool_name = function.get("name", "unknown")
+                    _LOGGER.error(f"Error executing parallel tool {tool_name}: {result}")
+                    if self.server_type == SERVER_TYPE_OLLAMA:
+                        results.append({
+                            "role": "tool",
+                            "content": json.dumps({"error": str(result)})
+                        })
+                    else:
+                        results.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "content": json.dumps({"error": str(result)})
+                        })
+                else:
+                    results.append(result)
+            
+            # Record parallel execution statistics
+            # Estimate: sequential would take actual_time * batch_size
+            batch_size = len(parallel_calls)
+            if batch_size > 1:
+                estimated_sequential_ms = actual_time_ms * batch_size
+                time_saved_ms = estimated_sequential_ms - actual_time_ms
+                stats = self.hass.data.get(DOMAIN, {}).get("statistics")
+                if stats:
+                    stats.record_parallel_execution(batch_size, time_saved_ms)
+        
+        # Execute action tools sequentially
+        if sequential_calls:
+            if self.debug_mode:
+                _LOGGER.info(f"📞 Executing {len(sequential_calls)} tool(s) sequentially")
+            
+            sequential_results = await self._execute_tool_calls_sequential(sequential_calls)
+            results.extend(sequential_results)
+        
+        return results
+
+    async def _execute_single_tool_call(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a single tool call and return result."""
+        tool_call_id = tool_call.get("id", f"call_{uuid.uuid4().hex[:8]}")
+        function = tool_call.get("function", {})
+        tool_name = function.get("name")
+        arguments_str = function.get("arguments", "{}")
+
+        _LOGGER.info(f"📞 Processing tool call {tool_call_id}: {tool_name}")
+
+        # Parse arguments based on server type
+        if self.server_type == SERVER_TYPE_OLLAMA:
+            arguments = arguments_str if isinstance(arguments_str, dict) else json.loads(arguments_str) if arguments_str else {}
+        else:
+            arguments = json.loads(arguments_str) if arguments_str else {}
+
+        # Execute the tool
+        result = await self._call_mcp_tool(tool_name, arguments)
+
+        # Format result for OpenAI
+        if "error" in result:
+            content = json.dumps({"error": result["error"]})
+        else:
+            content = result.get("result", "")
+
+        # Check if this is the conversation state tool
+        if tool_name == "set_conversation_state" and content:
+            if "conversation_state:true" in content.lower():
+                self._expecting_response = True
+                _LOGGER.debug("🔄 Conversation will continue - expecting response")
+            elif "conversation_state:false" in content.lower():
+                self._expecting_response = False
+                _LOGGER.debug("🔄 Conversation will close - not expecting response")
+
+        _LOGGER.info(f"✅ Tool {tool_name} executed successfully")
+
+        # Format result based on server type
+        if self.server_type == SERVER_TYPE_OLLAMA:
+            return {
+                "role": "tool",
+                "content": content if content is not None else ""
+            }
+        else:
+            return {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": content if content is not None else ""
+            }
+
+    async def _execute_tool_calls_sequential(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Execute tool calls sequentially (original behavior)."""
         results = []
 
         for tool_call in tool_calls:
@@ -1381,8 +1596,12 @@ class MCPAssistConversationEntity(ConversationEntity):
 
         return payload
 
-    async def _call_llm_streaming(self, messages: List[Dict[str, Any]]) -> str:
-        """Stream LLM responses with immediate TTS feedback."""
+    async def _call_llm_streaming(self, messages: List[Dict[str, Any]]) -> tuple[str, int]:
+        """Stream LLM responses with immediate TTS feedback.
+        
+        Returns:
+            Tuple of (response_text, total_tokens_used)
+        """
         _LOGGER.info(f"🚀 Starting streaming {self.server_type} conversation")
 
         # Test streaming once and cache result
@@ -1404,6 +1623,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         response_text = ""
         sentence_buffer = ""
         completed_tools = set()
+        total_tokens = 0  # Track total tokens across all iterations
 
         for iteration in range(self.max_iterations):
             _LOGGER.info(f"🔄 Stream iteration {iteration + 1}")
@@ -1532,8 +1752,14 @@ class MCPAssistConversationEntity(ConversationEntity):
 
                                     data = json.loads(line_str)
 
-                                    # Check for completion
+                                    # Check for completion - extract token usage
                                     if data.get("done"):
+                                        # Ollama provides token counts in final message
+                                        prompt_tokens = data.get("prompt_eval_count", 0) or 0
+                                        completion_tokens = data.get("eval_count", 0) or 0
+                                        total_tokens += prompt_tokens + completion_tokens
+                                        if prompt_tokens or completion_tokens:
+                                            _LOGGER.info(f"📊 Ollama tokens: prompt={prompt_tokens}, completion={completion_tokens}")
                                         break
 
                                     # Extract message
@@ -1554,6 +1780,15 @@ class MCPAssistConversationEntity(ConversationEntity):
                                         break
 
                                     data = json.loads(line_str[6:])
+                                    
+                                    # Extract token usage if present (some providers send this)
+                                    if 'usage' in data and data['usage']:
+                                        usage = data['usage']
+                                        chunk_tokens = usage.get('total_tokens', 0)
+                                        if not chunk_tokens:
+                                            chunk_tokens = usage.get('prompt_tokens', 0) + usage.get('completion_tokens', 0)
+                                        total_tokens = max(total_tokens, chunk_tokens)
+                                    
                                     choice = data['choices'][0]
                                     delta = choice.get('delta', {})
 
@@ -1691,15 +1926,23 @@ class MCPAssistConversationEntity(ConversationEntity):
             else:
                 # No tool calls, return the response
                 if response_text:
-                    return response_text
+                    return (response_text, total_tokens)
                 else:
                     # No content and no tools, might need another iteration
                     _LOGGER.warning("Empty response from streaming, retrying...")
 
-        return response_text if response_text else "I'm processing your request."
+        # Hit max iterations
+        if response_text:
+            return response_text
+        else:
+            return f"I reached the maximum of {self.max_iterations} tool calls while processing your request. Try simplifying your request, or increase the limit in Advanced Settings if you have a complex automation need."
 
-    async def _call_llm(self, messages: List[Dict[str, Any]]) -> str:
-        """Call LLM API with MCP tools and handle tool execution loop."""
+    async def _call_llm(self, messages: List[Dict[str, Any]]) -> tuple[str, int]:
+        """Call LLM API with MCP tools and handle tool execution loop.
+        
+        Returns:
+            Tuple of (response_text, total_tokens_used)
+        """
         # Try streaming first, fallback to HTTP if needed
         try:
             return await self._call_llm_streaming(messages)
@@ -1707,8 +1950,12 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.warning(f"Streaming failed ({e}), using HTTP fallback")
             return await self._call_llm_http(messages)
 
-    async def _call_llm_http(self, messages: List[Dict[str, Any]]) -> str:
-        """Original HTTP-based LLM call (fallback)."""
+    async def _call_llm_http(self, messages: List[Dict[str, Any]]) -> tuple[str, int]:
+        """Original HTTP-based LLM call (fallback).
+        
+        Returns:
+            Tuple of (response_text, total_tokens_used)
+        """
         _LOGGER.info(f"🚀 Using HTTP fallback for {self.server_type}")
 
         # Get MCP tools once
@@ -1718,6 +1965,7 @@ class MCPAssistConversationEntity(ConversationEntity):
 
         # Keep a mutable copy of messages for the conversation
         conversation_messages = list(messages)
+        total_tokens = 0  # Track total tokens across all iterations
 
         # Tool execution loop
         for iteration in range(self.max_iterations):
@@ -1770,6 +2018,23 @@ class MCPAssistConversationEntity(ConversationEntity):
                         raise Exception(f"{self.server_type} API error {response.status}: {error_text}")
 
                     data = await response.json()
+                    
+                    # Extract token usage from response
+                    if self.server_type == SERVER_TYPE_OLLAMA:
+                        # Ollama: prompt_eval_count + eval_count
+                        prompt_tokens = data.get("prompt_eval_count", 0) or 0
+                        completion_tokens = data.get("eval_count", 0) or 0
+                        total_tokens += prompt_tokens + completion_tokens
+                    elif "usage" in data and data["usage"]:
+                        # OpenAI-compatible: usage object
+                        usage = data["usage"]
+                        chunk_tokens = usage.get("total_tokens", 0)
+                        if not chunk_tokens:
+                            chunk_tokens = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+                        total_tokens += chunk_tokens
+                    
+                    if total_tokens > 0:
+                        _LOGGER.info(f"📊 HTTP tokens this iteration: {total_tokens}")
 
                     # Parse response based on server type
                     thought_signature = None  # Track for Gemini 3
@@ -1828,12 +2093,12 @@ class MCPAssistConversationEntity(ConversationEntity):
                     else:
                         # No more tool calls, we have the final response
                         final_content = message.get("content", "").strip()
-                        _LOGGER.info(f"💬 Final response received (length: {len(final_content)})")
-                        return final_content
+                        _LOGGER.info(f"💬 Final response received (length: {len(final_content)}, tokens: {total_tokens})")
+                        return (final_content, total_tokens)
 
         # If we hit max iterations, return what we have
-        _LOGGER.warning("⚠️ Hit maximum iterations (5) in tool execution loop")
-        return "I'm still processing your request. Please try again."
+        _LOGGER.warning(f"⚠️ Hit maximum iterations ({self.max_iterations}) in tool execution loop")
+        return f"I reached the maximum of {self.max_iterations} tool calls while processing your request. Try simplifying your request, or increase the limit in Advanced Settings if you have a complex automation need."
 
     async def _execute_actions(
         self,

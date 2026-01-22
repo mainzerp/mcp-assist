@@ -42,6 +42,7 @@ CONF_PRE_RESOLVE_THRESHOLD = "pre_resolve_threshold"
 CONF_PRE_RESOLVE_MARGIN = "pre_resolve_margin"
 CONF_ENABLE_FAST_PATH = "enable_fast_path"
 CONF_FAST_PATH_LANGUAGE = "fast_path_language"
+CONF_ENABLE_PARALLEL_TOOLS = "enable_parallel_tools"
 
 # Default values
 DEFAULT_SERVER_TYPE = "lmstudio"
@@ -80,6 +81,7 @@ DEFAULT_PRE_RESOLVE_THRESHOLD = 0.90  # Minimum similarity score for fuzzy match
 DEFAULT_PRE_RESOLVE_MARGIN = 0.08  # Minimum margin to second-best match
 DEFAULT_ENABLE_FAST_PATH = True  # Enable Fast Path for simple commands
 DEFAULT_FAST_PATH_LANGUAGE = "auto"  # Auto-detect language from HA config
+DEFAULT_ENABLE_PARALLEL_TOOLS = True  # Enable parallel tool execution
 
 # MCP Server settings
 MCP_SERVER_NAME = "ha-entity-discovery"

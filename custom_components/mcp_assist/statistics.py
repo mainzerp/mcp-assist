@@ -61,9 +61,14 @@ class ResponseTimeTracker:
 class MCPAssistStatistics:
     """Central statistics manager for MCP Assist."""
 
-    def __init__(self) -> None:
-        """Initialize statistics manager."""
+    def __init__(self, indexed_entities_callback: Optional[Callable[[], int]] = None) -> None:
+        """Initialize statistics manager.
+        
+        Args:
+            indexed_entities_callback: Optional callback to get count of indexed entities.
+        """
         self._response_times = ResponseTimeTracker()
+        self._indexed_entities_callback = indexed_entities_callback
 
         # Counters
         self._fast_path_hits: int = 0
@@ -83,6 +88,11 @@ class MCPAssistStatistics:
         # Status
         self._status: str = "online"
         self._last_request_time: Optional[datetime] = None
+
+        # Parallel execution tracking
+        self._parallel_batches: int = 0
+        self._parallel_tools_total: int = 0
+        self._parallel_time_saved_ms: float = 0.0
 
         # Listeners for sensor updates
         self._listeners: list[Callable[[], None]] = []
@@ -155,6 +165,18 @@ class MCPAssistStatistics:
         self._llm_errors += 1
         self._notify_listeners()
 
+    def record_parallel_execution(self, batch_size: int, time_saved_ms: float) -> None:
+        """Record a parallel tool execution batch.
+        
+        Args:
+            batch_size: Number of tools executed in parallel
+            time_saved_ms: Estimated time saved vs sequential execution
+        """
+        self._parallel_batches += 1
+        self._parallel_tools_total += batch_size
+        self._parallel_time_saved_ms += time_saved_ms
+        self._notify_listeners()
+
     def set_status(self, status: str) -> None:
         """Set the current status."""
         self._status = status
@@ -175,9 +197,33 @@ class MCPAssistStatistics:
             return 0.0
         return round((self._pre_resolve_hits / self._pre_resolve_attempts) * 100, 1)
 
+    @property
+    def avg_parallel_batch_size(self) -> float:
+        """Calculate average number of tools per parallel batch."""
+        if self._parallel_batches == 0:
+            return 0.0
+        return round(self._parallel_tools_total / self._parallel_batches, 1)
+
+    @property
+    def local_processing_rate(self) -> float:
+        """Calculate percentage of requests handled locally (Fast Path) vs LLM."""
+        total = self._fast_path_hits + self._llm_calls
+        if total == 0:
+            return 0.0
+        return round((self._fast_path_hits / total) * 100, 1)
+
     def get_stats(self) -> dict[str, Any]:
         """Get all statistics as a dictionary."""
         self._check_date_rollover()
+        
+        # Get indexed entities count via callback if available
+        indexed_entities = 0
+        if self._indexed_entities_callback:
+            try:
+                indexed_entities = self._indexed_entities_callback()
+            except Exception as e:
+                _LOGGER.debug("Error getting indexed entities count: %s", e)
+        
         return {
             # Status
             "status": self._status,
@@ -189,7 +235,8 @@ class MCPAssistStatistics:
             # Fast Path
             "fast_path_hits": self._fast_path_hits,
             "fast_path_misses": self._fast_path_misses,
-            "fast_path_rate": self.fast_path_rate,
+            "fast_path_success_rate": self.fast_path_rate,
+            "local_processing_rate": self.local_processing_rate,
 
             # Pre-resolve
             "pre_resolve_hits": self._pre_resolve_hits,
@@ -205,6 +252,14 @@ class MCPAssistStatistics:
 
             # Daily
             "requests_today": self._requests_today,
+            
+            # Index
+            "indexed_entities": indexed_entities,
+
+            # Parallel execution
+            "parallel_tool_batches": self._parallel_batches,
+            "avg_parallel_batch_size": self.avg_parallel_batch_size,
+            "parallel_time_saved_ms": round(self._parallel_time_saved_ms, 1),
         }
 
 

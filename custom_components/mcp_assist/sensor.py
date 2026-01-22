@@ -61,15 +61,15 @@ SENSOR_TYPES: tuple[MCPAssistSensorDescription, ...] = (
         icon="mdi:robot",
         value_fn=lambda stats: stats.get("llm_avg_response_time", 0),
     ),
-    # Fast Path Rate
+    # Fast Path Success Rate
     MCPAssistSensorDescription(
-        key="fast_path_rate",
-        translation_key="fast_path_rate",
-        name="Fast Path Rate",
+        key="fast_path_success_rate",
+        translation_key="fast_path_success_rate",
+        name="Fast Path Success Rate",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:percent-circle",
-        value_fn=lambda stats: stats.get("fast_path_rate", 0),
+        value_fn=lambda stats: stats.get("fast_path_success_rate", 0),
         attr_fn=lambda stats, _: {
             "hits": stats.get("fast_path_hits", 0),
             "misses": stats.get("fast_path_misses", 0),
@@ -151,6 +151,48 @@ SENSOR_TYPES: tuple[MCPAssistSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda stats: stats.get("llm_errors", 0),
     ),
+    # Local Processing Rate (Fast Path vs LLM)
+    MCPAssistSensorDescription(
+        key="local_processing_rate",
+        translation_key="local_processing_rate",
+        name="Local Processing Rate",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:home-lightning-bolt",
+        value_fn=lambda stats: stats.get("local_processing_rate", 0),
+        attr_fn=lambda stats, _: {
+            "fast_path_hits": stats.get("fast_path_hits", 0),
+            "llm_calls": stats.get("llm_calls_total", 0),
+        },
+    ),
+    # Parallel Tool Batches
+    MCPAssistSensorDescription(
+        key="parallel_tool_batches",
+        translation_key="parallel_tool_batches",
+        name="Parallel Tool Batches",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:run-fast",
+        value_fn=lambda stats: stats.get("parallel_tool_batches", 0),
+    ),
+    # Average Parallel Batch Size
+    MCPAssistSensorDescription(
+        key="avg_parallel_batch_size",
+        translation_key="avg_parallel_batch_size",
+        name="Avg Parallel Batch Size",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:layers-triple",
+        value_fn=lambda stats: stats.get("avg_parallel_batch_size", 0),
+    ),
+    # Parallel Time Saved
+    MCPAssistSensorDescription(
+        key="parallel_time_saved_ms",
+        translation_key="parallel_time_saved_ms",
+        name="Parallel Time Saved",
+        native_unit_of_measurement=UnitOfTime.MILLISECONDS,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:timer-check",
+        value_fn=lambda stats: stats.get("parallel_time_saved_ms", 0),
+    ),
 )
 
 
@@ -176,14 +218,11 @@ async def async_setup_entry(
         _LOGGER.warning("Statistics manager not available, skipping sensor setup")
         return
 
-    # Get index manager for indexed_entities count
-    index_manager = hass.data.get(DOMAIN, {}).get("index_manager")
-
     # Mark sensors as created
     hass.data[DOMAIN]["sensors_created"] = True
 
     entities = [
-        MCPAssistSensor(hass, entry, description, stats_manager, index_manager)
+        MCPAssistSensor(hass, entry, description, stats_manager)
         for description in SENSOR_TYPES
     ]
 
@@ -203,13 +242,11 @@ class MCPAssistSensor(SensorEntity):
         entry: ConfigEntry,
         description: MCPAssistSensorDescription,
         stats_manager,
-        index_manager,
     ) -> None:
         """Initialize the sensor."""
         self.hass = hass
         self.entity_description = description
         self._stats_manager = stats_manager
-        self._index_manager = index_manager
         self._attr_unique_id = f"mcp_assist_{description.key}"
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, "mcp_assist_stats")},
@@ -240,30 +277,16 @@ class MCPAssistSensor(SensorEntity):
 
         await super().async_will_remove_from_hass()
 
-    def _get_stats(self) -> dict:
-        """Get current statistics including index manager data."""
-        stats = self._stats_manager.get_stats()
-
-        # Add indexed entities count from index manager
-        if self._index_manager:
-            entity_names = self._index_manager.get_entity_names()
-            if entity_names:
-                # Count unique entity_ids
-                unique_entities = len(set(entity_names.values()))
-                stats["indexed_entities"] = unique_entities
-
-        return stats
-
     @property
     def native_value(self):
         """Return the state of the sensor."""
-        stats = self._get_stats()
+        stats = self._stats_manager.get_stats()
         return self.entity_description.value_fn(stats)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return additional attributes."""
         if self.entity_description.attr_fn:
-            stats = self._get_stats()
+            stats = self._stats_manager.get_stats()
             return self.entity_description.attr_fn(stats, self.native_value)
         return None
