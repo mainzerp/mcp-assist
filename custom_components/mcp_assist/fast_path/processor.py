@@ -402,7 +402,7 @@ class FastPathProcessor:
         Returns:
             List of matching entity IDs
         """
-        matched_entities: list[tuple[str, int]] = []
+        matched_entities: list[tuple[str, int, str]] = []
         text_normalized = self._normalize_for_matching(text)
         
         # Priority 1: Use pre-resolved entities from Pre-Resolution
@@ -410,7 +410,7 @@ class FastPathProcessor:
             for name, entity_id in self._pre_resolved.items():
                 name_normalized = self._normalize_for_matching(name)
                 if name_normalized in text_normalized:
-                    matched_entities.append((entity_id, len(name_normalized)))
+                    matched_entities.append((entity_id, len(name_normalized), name_normalized))
                     _LOGGER.debug(f"Fast Path: Using pre-resolved entity: {name} -> {entity_id}")
         
         # Priority 2: If no pre-resolved match, try local entity name matching
@@ -421,16 +421,70 @@ class FastPathProcessor:
                     
                     # Direct substring match
                     if name_normalized in text_normalized:
-                        matched_entities.append((entity_id, len(name_normalized)))
+                        matched_entities.append((entity_id, len(name_normalized), name_normalized))
                         break
         
-        # Sort by match length (longer = more specific) and return entity IDs
+        # Sort by match length (longer = more specific)
         matched_entities.sort(key=lambda x: x[1], reverse=True)
+        
+        # Filter out substring matches that don't have independent occurrences
+        # Example: "ambiente und ambiente-wohnen" should keep BOTH
+        # But: "ambiente-wohnen" alone should only match the specific entity
+        filtered_matches: list[tuple[str, int, str]] = []
+        
+        for i, (entity_id, match_len, matched_name) in enumerate(matched_entities):
+            # Find all positions where this match occurs in the text
+            positions = []
+            start = 0
+            while True:
+                pos = text_normalized.find(matched_name, start)
+                if pos == -1:
+                    break
+                positions.append((pos, pos + len(matched_name)))
+                start = pos + 1
+            
+            # Check if this match has at least one independent occurrence
+            # (not contained within a longer match)
+            has_independent_occurrence = False
+            
+            for pos_start, pos_end in positions:
+                # Check if this position overlaps with any longer match
+                is_within_longer = False
+                
+                for j, (_, longer_len, longer_name) in enumerate(matched_entities):
+                    if j >= i:  # Only check against longer matches (earlier in sorted list)
+                        break
+                    
+                    # Find positions of the longer match
+                    longer_start = 0
+                    while True:
+                        longer_pos = text_normalized.find(longer_name, longer_start)
+                        if longer_pos == -1:
+                            break
+                        
+                        longer_end = longer_pos + len(longer_name)
+                        
+                        # Check if current position is completely within this longer match
+                        if longer_pos <= pos_start < longer_end and longer_pos < pos_end <= longer_end:
+                            is_within_longer = True
+                            break
+                        
+                        longer_start = longer_pos + 1
+                    
+                    if is_within_longer:
+                        break
+                
+                if not is_within_longer:
+                    has_independent_occurrence = True
+                    break
+            
+            if has_independent_occurrence:
+                filtered_matches.append((entity_id, match_len, matched_name))
         
         # Remove duplicates while preserving order
         seen = set()
         result = []
-        for entity_id, _ in matched_entities:
+        for entity_id, _, _ in filtered_matches:
             if entity_id not in seen:
                 seen.add(entity_id)
                 result.append(entity_id)
