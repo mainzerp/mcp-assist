@@ -1,16 +1,18 @@
 """MCP Server for Home Assistant entity discovery."""
+from __future__ import annotations
 
 import asyncio
 import ipaddress
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any
 from urllib.parse import urlparse
 
 from aiohttp import web, WSMsgType
 from aiohttp.web_ws import WebSocketResponse
 
 from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import area_registry as ar, entity_registry as er
 from homeassistant.components.homeassistant import async_should_expose
 from homeassistant.util import dt as dt_util
@@ -36,6 +38,7 @@ from .domain_registry import (
     TYPE_READ_ONLY,
     TYPE_SERVICE_ONLY
 )
+from .utils import get_shared_setting
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,7 +79,7 @@ class MCPServer:
             _LOGGER.warning("Could not parse LM Studio URL '%s': %s", lmstudio_url, e)
 
         # Add user-configured allowed IPs/CIDR ranges (shared setting)
-        allowed_ips_str = self._get_shared_setting(CONF_ALLOWED_IPS, DEFAULT_ALLOWED_IPS)
+        allowed_ips_str = get_shared_setting(self.hass, self.entry, CONF_ALLOWED_IPS, DEFAULT_ALLOWED_IPS)
         if allowed_ips_str:
             # Parse comma-separated list
             additional_ips = [ip.strip() for ip in allowed_ips_str.split(',') if ip.strip()]
@@ -91,35 +94,14 @@ class MCPServer:
         # Custom tools will be initialized in start() after system entry exists
         self.custom_tools = None
 
-    def _get_shared_setting(self, key: str, default: Any) -> Any:
-        """Get a shared setting from system entry with fallback to profile entry."""
-        # Import here to avoid circular dependency
-        from . import get_system_entry
-
-        # Try to get from system entry first
-        system_entry = get_system_entry(self.hass)
-        if system_entry:
-            value = system_entry.options.get(key, system_entry.data.get(key))
-            if value is not None:
-                return value
-
-        # Fallback to profile entry for backward compatibility
-        if self.entry:
-            value = self.entry.options.get(key, self.entry.data.get(key))
-            if value is not None:
-                return value
-
-        # Return default
-        return default
-
     def _get_search_provider(self) -> str:
         """Get search provider (shared setting) with backward compatibility."""
-        provider = self._get_shared_setting(CONF_SEARCH_PROVIDER, None)
+        provider = get_shared_setting(self.hass, self.entry, CONF_SEARCH_PROVIDER, None)
         if provider:
             return provider
 
         # Backward compat: if old enable_custom_tools was True, default to "brave"
-        if self._get_shared_setting(CONF_ENABLE_CUSTOM_TOOLS, False):
+        if get_shared_setting(self.hass, self.entry, CONF_ENABLE_CUSTOM_TOOLS, False):
             return "brave"
 
         return "none"
@@ -153,28 +135,28 @@ class MCPServer:
                     from .custom_tools import CustomToolsLoader
                     self.custom_tools = CustomToolsLoader(self.hass, self.entry)
                     await self.custom_tools.initialize()
-                    _LOGGER.info("✅ Custom tools initialized for search provider: %s", search_provider)
+                    _LOGGER.info("Custom tools initialized for search provider: %s", search_provider)
                 except Exception as e:
                     _LOGGER.error(f"Failed to initialize custom tools: {e}")
 
-            _LOGGER.info("✅ MCP server started successfully on http://0.0.0.0:%d", self.port)
-            _LOGGER.info("🌐 MCP server is accessible from external machines")
-            _LOGGER.info("🔗 Health check available at: http://<your-ha-ip>:%d/health", self.port)
-            _LOGGER.info("📡 WebSocket endpoint: ws://<your-ha-ip>:%d/ws", self.port)
-            _LOGGER.info("📤 HTTP endpoint: http://<your-ha-ip>:%d/", self.port)
+            _LOGGER.info("MCP server started successfully on http://0.0.0.0:%d", self.port)
+            _LOGGER.info("MCP server is accessible from external machines")
+            _LOGGER.info("Health check available at: http://<your-ha-ip>:%d/health", self.port)
+            _LOGGER.info("WebSocket endpoint: ws://<your-ha-ip>:%d/ws", self.port)
+            _LOGGER.info("HTTP endpoint: http://<your-ha-ip>:%d/", self.port)
 
         except OSError as err:
             if err.errno == 98:  # Address already in use
-                _LOGGER.error("❌ Port %d is already in use. Please choose a different port.", self.port)
+                _LOGGER.error("Port %d is already in use. Please choose a different port.", self.port)
                 raise
             elif err.errno == 13:  # Permission denied
-                _LOGGER.error("❌ Permission denied to bind to port %d. Try a port >= 1024.", self.port)
+                _LOGGER.error("Permission denied to bind to port %d. Try a port >= 1024.", self.port)
                 raise
             else:
-                _LOGGER.error("❌ Failed to bind MCP server to port %d: %s", self.port, err)
+                _LOGGER.error("Failed to bind MCP server to port %d: %s", self.port, err)
                 raise
         except Exception as err:
-            _LOGGER.error("❌ Failed to start MCP server: %s", err)
+            _LOGGER.error("Failed to start MCP server: %s", err)
             raise
 
     async def stop(self) -> None:
@@ -246,7 +228,7 @@ class MCPServer:
     async def handle_health(self, request: web.Request) -> web.Response:
         """Handle health check requests."""
         client_ip = request.remote
-        _LOGGER.info("🏥 Health check from %s", client_ip)
+        _LOGGER.info("Health check from %s", client_ip)
 
         health_info = {
             "status": "healthy",
@@ -266,11 +248,11 @@ class MCPServer:
     async def handle_progress_stream(self, request: web.Request) -> web.StreamResponse:
         """SSE endpoint for progress updates during tool execution."""
         client_ip = request.remote
-        _LOGGER.info("📊 Progress stream request from %s", client_ip)
+        _LOGGER.info("Progress stream request from %s", client_ip)
 
         # Check IP whitelist
         if not self._is_ip_allowed(client_ip):
-            _LOGGER.warning("🚫 Blocked progress stream request from unauthorized IP: %s", client_ip)
+            _LOGGER.warning("Blocked progress stream request from unauthorized IP: %s", client_ip)
             return web.Response(status=403, text="Forbidden: IP not authorized")
 
         response = web.StreamResponse(
@@ -327,11 +309,11 @@ class MCPServer:
     async def handle_sse(self, request: web.Request) -> web.StreamResponse:
         """Handle Server-Sent Events for MCP notifications."""
         client_ip = request.remote
-        _LOGGER.info("🌊 SSE connection request from %s", client_ip)
+        _LOGGER.info("SSE connection request from %s", client_ip)
 
         # Check IP whitelist
         if not self._is_ip_allowed(client_ip):
-            _LOGGER.warning("🚫 Blocked SSE connection from unauthorized IP: %s", client_ip)
+            _LOGGER.warning("Blocked SSE connection from unauthorized IP: %s", client_ip)
             return web.Response(status=403, text="Forbidden: IP not authorized")
 
         response = web.StreamResponse()
@@ -345,7 +327,7 @@ class MCPServer:
 
         # Store this client for notifications
         self.sse_clients.append(response)
-        _LOGGER.info("✅ SSE client connected. Total clients: %d", len(self.sse_clients))
+        _LOGGER.info("SSE client connected. Total clients: %d", len(self.sse_clients))
 
         try:
             # Send initial connection confirmation
@@ -357,7 +339,7 @@ class MCPServer:
                 "method": "notifications/tools/list_changed"
             }
             await response.write(f"data: {json.dumps(notification)}\n\n".encode())
-            _LOGGER.info("📤 Sent initial tools/list_changed notification")
+            _LOGGER.info("Sent initial tools/list_changed notification")
 
             # Keep connection alive
             while True:
@@ -365,7 +347,7 @@ class MCPServer:
                 await response.write(b': keepalive\n\n')
 
         except Exception as err:
-            _LOGGER.info("📤 SSE client disconnected: %s", err)
+            _LOGGER.info("SSE client disconnected: %s", err)
         finally:
             if response in self.sse_clients:
                 self.sse_clients.remove(response)
@@ -381,17 +363,17 @@ class MCPServer:
     async def handle_websocket(self, request: web.Request) -> WebSocketResponse:
         """Handle WebSocket connections for MCP protocol."""
         client_ip = request.remote
-        _LOGGER.info("🔌 New MCP WebSocket connection from %s", client_ip)
+        _LOGGER.info("New MCP WebSocket connection from %s", client_ip)
 
         # Check IP whitelist
         if not self._is_ip_allowed(client_ip):
-            _LOGGER.warning("🚫 Blocked WebSocket connection from unauthorized IP: %s", client_ip)
+            _LOGGER.warning("Blocked WebSocket connection from unauthorized IP: %s", client_ip)
             return web.Response(status=403, text="Forbidden: IP not authorized")
 
         ws = web.WebSocketResponse()
         await ws.prepare(request)
 
-        _LOGGER.info("✅ MCP WebSocket connection established with %s", client_ip)
+        _LOGGER.info("MCP WebSocket connection established with %s", client_ip)
 
         try:
             async for msg in ws:
@@ -429,11 +411,11 @@ class MCPServer:
     async def handle_mcp_request(self, request: web.Request) -> web.Response:
         """Handle HTTP MCP requests with proper JSON-RPC 2.0 protocol."""
         client_ip = request.remote
-        _LOGGER.info("📨 MCP HTTP JSON-RPC request from %s", client_ip)
+        _LOGGER.info("MCP HTTP JSON-RPC request from %s", client_ip)
 
         # Check IP whitelist
         if not self._is_ip_allowed(client_ip):
-            _LOGGER.warning("🚫 Blocked MCP request from unauthorized IP: %s", client_ip)
+            _LOGGER.warning("Blocked MCP request from unauthorized IP: %s", client_ip)
             return web.json_response({
                 "jsonrpc": "2.0",
                 "error": {
@@ -473,13 +455,13 @@ class MCPServer:
             is_notification = "id" not in data
 
             if is_notification:
-                _LOGGER.debug("📮 MCP notification: %s", data.get("method"))
+                _LOGGER.debug("MCP notification: %s", data.get("method"))
                 # Process the notification but don't expect a response
                 await self.process_mcp_notification(data)
                 # Return 204 No Content for notifications
                 return web.Response(status=204)
             else:
-                _LOGGER.debug("📋 MCP method: %s (id: %s)", data.get("method"), request_id)
+                _LOGGER.debug("MCP method: %s (id: %s)", data.get("method"), request_id)
                 response = await self.process_mcp_message(data)
                 return web.json_response(response)
 
@@ -515,7 +497,7 @@ class MCPServer:
             # Old format: "initialized"
             # New format: "notifications/initialized"
             if method in ("initialized", "notifications/initialized"):
-                _LOGGER.info("✅ MCP client initialized successfully")
+                _LOGGER.info("MCP client initialized successfully")
                 # Send tools/list_changed to all SSE clients
                 await self.broadcast_notification("notifications/tools/list_changed")
             elif method == "notifications/cancelled":
@@ -604,7 +586,7 @@ class MCPServer:
 
     async def handle_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle MCP initialize request."""
-        _LOGGER.info("🔌 MCP initialize request received")
+        _LOGGER.info("MCP initialize request received")
         return {
             "protocolVersion": "2024-11-05",  # MCP uses date-based versioning
             "capabilities": {
@@ -1118,7 +1100,7 @@ class MCPServer:
         target = args.get("target", {})
         data = args.get("data", {})
 
-        _LOGGER.info(f"🎯 Performing action: {domain}.{action} on {target}")
+        _LOGGER.info("Performing action: %s.%s on %s", domain, action, target)
 
         # Notify start
         self.publish_progress(
@@ -1230,7 +1212,7 @@ class MCPServer:
         expecting_response = args.get("expecting_response", False)
 
         # Log the state for debugging
-        _LOGGER.info(f"🔄 Conversation state set: expecting_response={expecting_response}")
+        _LOGGER.info("Conversation state set: expecting_response=%s", expecting_response)
 
         # Return a marker that the agent can detect
         return {
@@ -1306,20 +1288,20 @@ class MCPServer:
 
         except asyncio.TimeoutError:
             error_msg = f"Script execution timed out after {timeout} seconds"
-            _LOGGER.error(f"❌ {error_msg}: {full_script_id}")
+            _LOGGER.error("%s: %s", error_msg, full_script_id)
             return {
                 "content": [{
                     "type": "text",
-                    "text": f"❌ Error: {error_msg}"
+                    "text": f"Error: {error_msg}"
                 }]
             }
         except Exception as err:
             error_msg = f"Script execution failed: {err}"
-            _LOGGER.exception(f"❌ {error_msg}")
+            _LOGGER.exception("%s", error_msg)
             return {
                 "content": [{
                     "type": "text",
-                    "text": f"❌ Error: {error_msg}"
+                    "text": f"Error: {error_msg}"
                 }]
             }
 

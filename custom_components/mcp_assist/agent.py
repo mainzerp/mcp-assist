@@ -1,4 +1,5 @@
 """LM Studio MCP conversation agent."""
+from __future__ import annotations
 
 import asyncio
 import json
@@ -6,7 +7,7 @@ import logging
 import re
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Literal
 
 import aiohttp
 
@@ -95,8 +96,11 @@ from .const import (
     GEMINI_BASE_URL,
     ANTHROPIC_BASE_URL,
     OPENROUTER_BASE_URL,
+    LOG_MAX_RESPONSE_LENGTH,
+    ENTITY_MATCH_CHECK_CHARS,
 )
 from .conversation_history import ConversationHistory
+from .utils import get_shared_setting, sanitize_log_data
 from .fast_path import FastPathProcessor, is_fast_path_candidate, KeywordLoader
 from .statistics import MCPAssistStatistics
 
@@ -165,10 +169,10 @@ class MCPAssistConversationEntity(ConversationEntity):
 
         # Log the actual configuration being used
         if self.debug_mode:
-            _LOGGER.debug(f"🔍 Server Type: {self.server_type}")
-            _LOGGER.debug(f"🔍 Base URL: {self.base_url_dynamic}")
-            _LOGGER.debug(f"🔍 Debug mode: ON")
-            _LOGGER.debug(f"🔍 Max iterations: {self.max_iterations}")
+            _LOGGER.debug("Server Type: %s", self.server_type)
+            _LOGGER.debug("Base URL: %s", self.base_url_dynamic)
+            _LOGGER.debug("Debug mode: ON")
+            _LOGGER.debug("Max iterations: %d", self.max_iterations)
 
         _LOGGER.info(
             "MCP Assist Agent initialized - Server: %s, Model: %s, MCP Port: %d, URL: %s",
@@ -177,26 +181,6 @@ class MCPAssistConversationEntity(ConversationEntity):
             self.mcp_port,
             self.base_url_dynamic
         )
-
-    def _get_shared_setting(self, key: str, default: Any) -> Any:
-        """Get a shared setting from system entry with fallback to profile entry."""
-        # Import here to avoid circular dependency
-        from . import get_system_entry
-
-        # Try to get from system entry first
-        system_entry = get_system_entry(self.hass)
-        if system_entry:
-            value = system_entry.options.get(key, system_entry.data.get(key))
-            if value is not None:
-                return value
-
-        # Fallback to profile entry for backward compatibility
-        value = self.entry.options.get(key, self.entry.data.get(key))
-        if value is not None:
-            return value
-
-        # Return default
-        return default
 
     # Dynamic configuration properties - read from entry.options/data each time
     @property
@@ -224,7 +208,7 @@ class MCPAssistConversationEntity(ConversationEntity):
     @property
     def mcp_port(self) -> int:
         """Get MCP port (shared setting)."""
-        return self._get_shared_setting(CONF_MCP_PORT, DEFAULT_MCP_PORT)
+        return get_shared_setting(self.hass, self.entry, CONF_MCP_PORT, DEFAULT_MCP_PORT)
 
     @property
     def debug_mode(self) -> bool:
@@ -331,13 +315,13 @@ class MCPAssistConversationEntity(ConversationEntity):
     @property
     def search_provider(self) -> str:
         """Get search provider (shared setting) with backward compatibility."""
-        provider = self._get_shared_setting(CONF_SEARCH_PROVIDER, None)
+        provider = get_shared_setting(self.hass, self.entry, CONF_SEARCH_PROVIDER, None)
 
         if provider:
             return provider
 
         # Backward compat: if old enable_custom_tools was True, default to "brave"
-        if self._get_shared_setting(CONF_ENABLE_CUSTOM_TOOLS, False):
+        if get_shared_setting(self.hass, self.entry, CONF_ENABLE_CUSTOM_TOOLS, False):
             return "brave"
 
         return "none"
@@ -516,7 +500,7 @@ class MCPAssistConversationEntity(ConversationEntity):
             self._current_chat_log.async_add_assistant_content_without_tools(assistant_content)
 
             if self.debug_mode:
-                _LOGGER.debug(f"📊 Recorded {len(tool_calls)} tool calls to ChatLog")
+                _LOGGER.debug("Recorded %d tool calls to ChatLog", len(tool_calls))
         except Exception as e:
             _LOGGER.error(f"Error recording tool calls to ChatLog: {e}")
 
@@ -541,7 +525,7 @@ class MCPAssistConversationEntity(ConversationEntity):
             self._current_chat_log.async_add_assistant_content_without_tools(result_content)
 
             if self.debug_mode:
-                _LOGGER.debug(f"📊 Recorded tool result for {tool_name} to ChatLog")
+                _LOGGER.debug("Recorded tool result for %s to ChatLog", tool_name)
         except Exception as e:
             _LOGGER.error(f"Error recording tool result to ChatLog: {e}")
 
@@ -551,7 +535,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         """Process user input and return response."""
         import time
 
-        _LOGGER.info("🎤 Voice request started - Processing: %s", user_input.text)
+        _LOGGER.info("Voice request started - Processing: %s", user_input.text)
 
         # Create ChatLog for debug view
         with chat_session.async_get_chat_session(
@@ -617,7 +601,7 @@ class MCPAssistConversationEntity(ConversationEntity):
                         if stats:
                             stats.record_fast_path_hit(fast_path_duration_ms)
 
-                        _LOGGER.info("⚡ Fast Path handled command successfully")
+                        _LOGGER.info("Fast Path handled command successfully")
                         # Update history with Fast Path interaction
                         self.history.add_turn(
                             conversation_id,
@@ -635,7 +619,7 @@ class MCPAssistConversationEntity(ConversationEntity):
                         )
                     else:
                         if self.debug_mode:
-                            _LOGGER.debug("⚡ Fast Path attempted but failed: %s", fast_path_result.error)
+                            _LOGGER.debug("Fast Path attempted but failed: %s", fast_path_result.error)
                         # Record Fast Path miss and fall through to LLM
                         if stats:
                             stats.record_fast_path_miss()
@@ -662,34 +646,34 @@ class MCPAssistConversationEntity(ConversationEntity):
             # Build system prompt with context (including pre-resolved entities with state)
             system_prompt = await self._build_system_prompt_with_context(user_input, pre_resolved_hint)
             if self.debug_mode:
-                _LOGGER.info(f"📝 System prompt built, length: {len(system_prompt)} chars")
-                _LOGGER.info(f"📝 System prompt preview: {system_prompt[:200]}...")
+                _LOGGER.info("System prompt built, length: %d chars", len(system_prompt))
+                _LOGGER.info("System prompt preview: %s...", system_prompt[:200])
 
             # Build conversation messages
             messages = self._build_messages(system_prompt, user_input.text, history)
             if self.debug_mode:
-                _LOGGER.info(f"📨 Messages built: {len(messages)} messages")
+                _LOGGER.info("Messages built: %d messages", len(messages))
                 for i, msg in enumerate(messages):
                     role = msg.get('role')
                     content_len = len(msg.get('content', '')) if msg.get('content') else 0
-                    _LOGGER.info(f"  Message {i}: role={role}, content_length={content_len}")
+                    _LOGGER.info("  Message %d: role=%s, content_length=%d", i, role, content_len)
 
             # Call LLM API with timing
-            _LOGGER.info(f"📡 Calling {self.server_type} API...")
+            _LOGGER.info("Calling %s API...", self.server_type)
             llm_start = time.perf_counter()
             try:
                 response_text, tokens_used = await self._call_llm(messages)
                 llm_duration_ms = (time.perf_counter() - llm_start) * 1000
                 if stats:
                     stats.record_llm_call(llm_duration_ms, tokens=tokens_used)
-                _LOGGER.info(f"✅ {self.server_type} response received, length: %d, tokens: %d", len(response_text), tokens_used)
+                _LOGGER.info(
+                    "%s response received, length: %d, tokens: %d",
+                    self.server_type, len(response_text), tokens_used
+                )
                 if self.debug_mode:
-                    # Use repr() to show newlines and hidden characters
-                    _LOGGER.info(f"💬 Full response (repr): {repr(response_text)}")
-                else:
-                    # For non-debug, just show first 500 chars
-                    preview = response_text[:500] if len(response_text) > 500 else response_text
-                    _LOGGER.info(f"💬 Full response preview: {preview}")
+                    # Sanitize response for logging to prevent credential exposure
+                    sanitized = sanitize_log_data(response_text, LOG_MAX_RESPONSE_LENGTH)
+                    _LOGGER.debug("Response preview (sanitized): %s", sanitized)
             except Exception as llm_error:
                 if stats:
                     stats.record_llm_error()
@@ -726,7 +710,7 @@ class MCPAssistConversationEntity(ConversationEntity):
             if self.follow_up_mode in ["default", "always"]:
                 user_wants_to_end = self._detect_user_ending_intent(user_input.text)
                 if user_wants_to_end and self.debug_mode:
-                    _LOGGER.info("🎯 User ending intent detected (stopwords+1)")
+                    _LOGGER.info("User ending intent detected (stopwords+1)")
 
             # Determine follow-up mode
             if user_wants_to_end:
@@ -745,18 +729,18 @@ class MCPAssistConversationEntity(ConversationEntity):
                     # Clear for next conversation
                     delattr(self, '_expecting_response')
                     if self.debug_mode:
-                        _LOGGER.info("🎯 Using LLM's set_conversation_state indication")
+                        _LOGGER.info("Using LLM's set_conversation_state indication")
                 else:
                     # LLM didn't indicate, use pattern detection as fallback
                     continue_conversation = self._detect_follow_up_patterns(response_text)
                     if self.debug_mode:
                         if continue_conversation:
-                            _LOGGER.info("🎯 Pattern detection triggered continuation")
+                            _LOGGER.info("Pattern detection triggered continuation")
                         else:
-                            _LOGGER.info("🎯 No patterns detected, closing conversation")
+                            _LOGGER.info("No patterns detected, closing conversation")
 
             if self.debug_mode:
-                _LOGGER.info(f"🎯 Follow-up mode: {self.follow_up_mode}, Continue: {continue_conversation}")
+                _LOGGER.info("Follow-up mode: %s, Continue: %s", self.follow_up_mode, continue_conversation)
 
             return ConversationResult(
                 response=intent_response,
@@ -839,7 +823,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         # Count non-stop words (words not in single_words list)
         non_stop_words = [word for word in words if word not in single_words and word.strip()]
 
-        # End if ≤1 non-stop word
+        # End if <=1 non-stop word
         return len(non_stop_words) <= 1
 
     def _detect_follow_up_patterns(self, text: str) -> bool:
@@ -849,16 +833,18 @@ class MCPAssistConversationEntity(ConversationEntity):
 
         # Debug logging to see what we're checking
         if self.debug_mode:
-            _LOGGER.info(f"🔍 Pattern detection - Full response length: {len(text)} chars")
-            _LOGGER.info(f"🔍 Pattern detection - Last 200 chars: {text[-200:]}")
+            _LOGGER.debug(
+                "Pattern detection - Response length: %d chars, checking last %d",
+                len(text), ENTITY_MATCH_CHECK_CHARS
+            )
 
-        # Check last 200 characters for efficiency
-        check_text = text[-200:].lower()
+        # Check last N characters for efficiency (configurable via const)
+        check_text = text[-ENTITY_MATCH_CHECK_CHARS:].lower()
 
         # Pattern 1: Ends with a question mark
         if check_text.rstrip().endswith('?'):
             if self.debug_mode:
-                _LOGGER.info("📊 Question detected: phrase ends with question mark")
+                _LOGGER.debug("Question detected: phrase ends with question mark")
             return True
 
         # Pattern 2: Question phrases (user-configurable)
@@ -867,7 +853,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         for phrase in question_phrases:
             if phrase in check_text:
                 if self.debug_mode:
-                    _LOGGER.info(f"📊 Follow-up phrase detected: '{phrase}'")
+                    _LOGGER.info("Follow-up phrase detected: '%s'", phrase)
                 return True
 
         return False
@@ -948,11 +934,11 @@ class MCPAssistConversationEntity(ConversationEntity):
         
         if not is_fast_path_candidate(user_text, loader):
             if self.debug_mode:
-                _LOGGER.debug("⚡ Fast Path: Not a candidate for Fast Path")
+                _LOGGER.debug("Fast Path: Not a candidate for Fast Path")
             return None
         
         if self.debug_mode:
-            _LOGGER.info(f"⚡ Fast Path: Attempting with language '{language}'")
+            _LOGGER.info("Fast Path: Attempting with language '%s'", language)
         
         # Process via Fast Path, passing pre-resolved entities
         processor = FastPathProcessor(
@@ -1097,18 +1083,18 @@ class MCPAssistConversationEntity(ConversationEntity):
                 if entity_id not in resolved.values():
                     resolved[name] = entity_id
                     if self.debug_mode:
-                        _LOGGER.debug(f"🎯 Phase 1 match: '{name}' -> {entity_id}")
+                        _LOGGER.debug("Phase 1 match: '%s' -> %s", name, entity_id)
         
         # If Phase 1 found matches, return them
         if resolved:
-            _LOGGER.info(f"🎯 Pre-resolution Phase 1: Found {len(resolved)} direct matches")
+            _LOGGER.info("Pre-resolution Phase 1: Found %d direct matches", len(resolved))
             return resolved
         
         # Phase 2: Fuzzy matching with n-grams
         resolved = await self._fuzzy_match_entities(user_text_normalized, entity_names)
         
         if resolved:
-            _LOGGER.info(f"🎯 Pre-resolution Phase 2: Found {len(resolved)} fuzzy matches")
+            _LOGGER.info("Pre-resolution Phase 2: Found %d fuzzy matches", len(resolved))
         
         return resolved
     
@@ -1412,9 +1398,9 @@ class MCPAssistConversationEntity(ConversationEntity):
 
                         _LOGGER.info("MCP tools available: %s", ", ".join(tool_names))
                         if "perform_action" in tool_names:
-                            _LOGGER.info("✅ perform_action tool is available")
+                            _LOGGER.info("perform_action tool is available")
                         else:
-                            _LOGGER.warning("⚠️ perform_action tool NOT found!")
+                            _LOGGER.warning("perform_action tool NOT found!")
 
                         return openai_tools
                     return None
@@ -1425,7 +1411,7 @@ class MCPAssistConversationEntity(ConversationEntity):
 
     async def _call_mcp_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single MCP tool and return the result."""
-        _LOGGER.info(f"🔧 Executing MCP tool: {tool_name} with args: {arguments}")
+        _LOGGER.info("Executing MCP tool: %s with args: %s", tool_name, arguments)
 
         try:
             mcp_url = f"http://localhost:{self.mcp_port}"
@@ -1461,11 +1447,11 @@ class MCPAssistConversationEntity(ConversationEntity):
                         if isinstance(content, list) and len(content) > 0:
                             text_result = content[0].get("text", "")
                             if self.debug_mode:
-                                _LOGGER.info(f"🔍 MCP tool '{tool_name}' returned {len(text_result)} chars")
-                                _LOGGER.info(f"🔍 Full result (repr): {repr(text_result)}")
+                                _LOGGER.info("MCP tool '%s' returned %d chars", tool_name, len(text_result))
+                                _LOGGER.info("Full result (repr): %r", text_result)
                                 # Also log each line separately for readability
                                 for i, line in enumerate(text_result.split('\n')):
-                                    _LOGGER.info(f"  Line {i}: {line}")
+                                    _LOGGER.info("  Line %d: %s", i, line)
                             return {"result": text_result}
                         return {"result": str(content)}
                     elif "error" in data:
@@ -1568,7 +1554,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         # Execute parallel-safe tools concurrently
         if parallel_calls:
             if self.debug_mode:
-                _LOGGER.info(f"🚀 Executing {len(parallel_calls)} tool(s) in parallel")
+                _LOGGER.info("Executing %d tool(s) in parallel", len(parallel_calls))
             
             import time
             start_time = time.perf_counter()
@@ -1648,12 +1634,12 @@ class MCPAssistConversationEntity(ConversationEntity):
         if tool_name == "set_conversation_state" and content:
             if "conversation_state:true" in content.lower():
                 self._expecting_response = True
-                _LOGGER.debug("🔄 Conversation will continue - expecting response")
+                _LOGGER.debug("Conversation will continue - expecting response")
             elif "conversation_state:false" in content.lower():
                 self._expecting_response = False
-                _LOGGER.debug("🔄 Conversation will close - not expecting response")
+                _LOGGER.debug("Conversation will close - not expecting response")
 
-        _LOGGER.info(f"✅ Tool {tool_name} executed successfully")
+        _LOGGER.info("Tool %s executed successfully", tool_name)
 
         # Format result based on server type
         if self.server_type == SERVER_TYPE_OLLAMA:
@@ -1703,10 +1689,10 @@ class MCPAssistConversationEntity(ConversationEntity):
                     # Parse the expecting_response value from the result
                     if "conversation_state:true" in content.lower():
                         self._expecting_response = True
-                        _LOGGER.debug("🔄 Conversation will continue - expecting response")
+                        _LOGGER.debug("Conversation will continue - expecting response")
                     elif "conversation_state:false" in content.lower():
                         self._expecting_response = False
-                        _LOGGER.debug("🔄 Conversation will close - not expecting response")
+                        _LOGGER.debug("Conversation will close - not expecting response")
 
                 # Format result based on server type
                 if self.server_type == SERVER_TYPE_OLLAMA:
@@ -1723,7 +1709,7 @@ class MCPAssistConversationEntity(ConversationEntity):
                         "content": content if content is not None else ""
                     })
 
-                _LOGGER.info(f"✅ Tool {tool_name} executed successfully")
+                _LOGGER.info("Tool %s executed successfully", tool_name)
 
             except Exception as e:
                 _LOGGER.error(f"Error executing tool {tool_name}: {e}")
@@ -1756,8 +1742,8 @@ class MCPAssistConversationEntity(ConversationEntity):
             "max_tokens": 10
         }
 
-        _LOGGER.info(f"🧪 Testing basic streaming to: {self.base_url_dynamic}/v1/chat/completions")
-        _LOGGER.info(f"🧪 Model: {self.model_name}")
+        _LOGGER.info("Testing basic streaming to: %s/v1/chat/completions", self.base_url_dynamic)
+        _LOGGER.info("Model: %s", self.model_name)
 
         try:
             timeout = aiohttp.ClientTimeout(total=5)
@@ -1765,26 +1751,26 @@ class MCPAssistConversationEntity(ConversationEntity):
                 url = f"{self.base_url_dynamic}/v1/chat/completions"
                 headers = self._get_auth_headers()
                 async with session.post(url, headers=headers, json=payload) as response:
-                    _LOGGER.info(f"✅ Basic streaming connected! Status: {response.status}")
-                    _LOGGER.info(f"📋 Headers: {dict(response.headers)}")
+                    _LOGGER.info("Basic streaming connected! Status: %d", response.status)
+                    _LOGGER.info("Headers: %s", dict(response.headers))
 
                     # Try to read first few lines
                     line_count = 0
                     async for line in response.content:
                         line_str = line.decode('utf-8').strip()
-                        _LOGGER.info(f"📨 Line {line_count}: {line_str[:100]}")
+                        _LOGGER.info("Line %d: %s", line_count, line_str[:100])
                         line_count += 1
                         if line_count >= 3:
                             break
 
-                    _LOGGER.info(f"✅ Basic streaming works! Received {line_count} lines")
+                    _LOGGER.info("Basic streaming works! Received %d lines", line_count)
                     return True
 
         except aiohttp.ClientConnectionError as e:
-            _LOGGER.error(f"❌ Connection error: {e}")
+            _LOGGER.error("Connection error: %s", e)
             return False
         except Exception as e:
-            _LOGGER.error(f"❌ Basic streaming failed: {type(e).__name__}: {e}")
+            _LOGGER.error("Basic streaming failed: %s: %s", type(e).__name__, e)
             import traceback
             _LOGGER.error(traceback.format_exc())
             return False
@@ -1901,19 +1887,19 @@ class MCPAssistConversationEntity(ConversationEntity):
         Returns:
             Tuple of (response_text, total_tokens_used)
         """
-        _LOGGER.info(f"🚀 Starting streaming {self.server_type} conversation")
+        _LOGGER.info("Starting streaming %s conversation", self.server_type)
 
         # Test streaming once and cache result
-        _LOGGER.debug(f"🔍 Checking streaming cache: hasattr={hasattr(self, '_streaming_available')}")
+        _LOGGER.debug("Checking streaming cache: hasattr=%s", hasattr(self, '_streaming_available'))
         if hasattr(self, '_streaming_available'):
-            _LOGGER.debug(f"✅ Using cached streaming availability: {self._streaming_available}")
+            _LOGGER.debug("Using cached streaming availability: %s", self._streaming_available)
         
         if not hasattr(self, '_streaming_available'):
-            _LOGGER.info("🧪 Running streaming test (not cached)")
+            _LOGGER.info("Running streaming test (not cached)")
             self._streaming_available = await self._test_streaming_basic()
-            _LOGGER.info(f"📝 Cached streaming result: {self._streaming_available}")
+            _LOGGER.info("Cached streaming result: %s", self._streaming_available)
         else:
-            _LOGGER.info(f"⚡ Streaming test skipped (cached: {self._streaming_available})")
+            _LOGGER.info("Streaming test skipped (cached: %s)", self._streaming_available)
 
         if not self._streaming_available:
             _LOGGER.warning("Streaming not available, falling back to HTTP")
@@ -1933,19 +1919,19 @@ class MCPAssistConversationEntity(ConversationEntity):
         total_tokens = 0  # Track total tokens across all iterations
 
         for iteration in range(self.max_iterations):
-            _LOGGER.info(f"🔄 Stream iteration {iteration + 1}")
+            _LOGGER.info("Stream iteration %d", iteration + 1)
             if self.debug_mode and iteration == 0:
-                _LOGGER.info(f"🎯 Using model: {self.model_name}")
+                _LOGGER.info("Using model: %s", self.model_name)
 
             # Debug logging for iteration 2+ if enabled
             if self.debug_mode and iteration >= 1:
-                _LOGGER.info(f"🔄 Iteration {iteration + 1}: {len(conversation_messages)} messages to send")
+                _LOGGER.info("Iteration %d: %d messages to send", iteration + 1, len(conversation_messages))
                 for i, msg in enumerate(conversation_messages):
                     role = msg.get('role')
                     has_tool_calls = 'tool_calls' in msg
                     tool_call_id = msg.get('tool_call_id', '')
                     content_preview = str(msg.get('content', ''))[:100] if msg.get('content') else ''
-                    _LOGGER.info(f"  Msg {i}: {role}, tool_calls={has_tool_calls}, tool_call_id={tool_call_id}, content={content_preview}")
+                    _LOGGER.info("  Msg %d: %s, tool_calls=%s, tool_call_id=%s, content=%s", i, role, has_tool_calls, tool_call_id, content_preview)
 
             # Clean messages for streaming compatibility
             cleaned_messages = []
@@ -1973,10 +1959,10 @@ class MCPAssistConversationEntity(ConversationEntity):
 
             # Debug: Log actual cleaned payload being sent in iteration 2+
             if self.debug_mode and iteration >= 1:
-                _LOGGER.info(f"📤 Sending {len(cleaned_messages)} messages to LLM (iteration {iteration + 1}):")
-                _LOGGER.info(f"📤 Model: {self.model_name}")
-                _LOGGER.info(f"📤 Temperature: {payload.get('temperature', 'default')}")
-                _LOGGER.info(f"📤 Max tokens: {payload.get('max_tokens', payload.get('max_completion_tokens', 'default'))}")
+                _LOGGER.info("Sending %d messages to LLM (iteration %d):", len(cleaned_messages), iteration + 1)
+                _LOGGER.info("Model: %s", self.model_name)
+                _LOGGER.info("Temperature: %s", payload.get('temperature', 'default'))
+                _LOGGER.info("Max tokens: %s", payload.get('max_tokens', payload.get('max_completion_tokens', 'default')))
                 for i, msg in enumerate(cleaned_messages):
                     role = msg.get("role")
                     content = msg.get("content", "")
@@ -1984,9 +1970,9 @@ class MCPAssistConversationEntity(ConversationEntity):
                     if role == "tool":
                         # Show first 200 chars of tool responses
                         preview = str(content)[:200] if content else ""
-                        _LOGGER.info(f"  [{i}] {role}: {content_len} chars - {preview}...")
+                        _LOGGER.info("  [%d] %s: %d chars - %s...", i, role, content_len, preview)
                     else:
-                        _LOGGER.info(f"  [{i}] {role}: {content_len} chars")
+                        _LOGGER.info("  [%d] %s: %d chars", i, role, content_len)
 
 
             # Only clean if needed (performance optimization)
@@ -2019,16 +2005,16 @@ class MCPAssistConversationEntity(ConversationEntity):
                         url = f"{self.base_url_dynamic}/v1/chat/completions"
                     headers = self._get_auth_headers()
 
-                    _LOGGER.info(f"📡 Streaming to: {url}")
+                    _LOGGER.info("Streaming to: %s", url)
                     if self.debug_mode:
-                        _LOGGER.debug(f"📦 Payload size: {len(json.dumps(clean_payload))} bytes")
-                        _LOGGER.debug(f"🔧 Using model: {self.model_name}")
+                        _LOGGER.debug("Payload size: %d bytes", len(json.dumps(clean_payload)))
+                        _LOGGER.debug("Using model: %s", self.model_name)
 
                     # Use clean_payload instead of payload
                     async with session.post(url, headers=headers, json=clean_payload) as response:
-                        _LOGGER.info(f"🔌 Connection established, status: {response.status}")
+                        _LOGGER.info("Connection established, status: %d", response.status)
                         if self.debug_mode:
-                            _LOGGER.debug(f"📋 Response headers: {dict(response.headers)}")
+                            _LOGGER.debug("Response headers: %s", dict(response.headers))
 
                         if response.status != 200:
                             try:
@@ -2037,12 +2023,12 @@ class MCPAssistConversationEntity(ConversationEntity):
                             except:
                                 error_text = await response.text()
                             # Fallback to non-streaming
-                            _LOGGER.error(f"❌ Streaming failed with status {response.status}")
-                            _LOGGER.error(f"❌ Full error response: {error_text}")
+                            _LOGGER.error("Streaming failed with status %d", response.status)
+                            _LOGGER.error("Full error response: %s", error_text)
                             raise Exception(f"Streaming failed: {error_text}")  # Raise to trigger fallback
 
                         if self.debug_mode:
-                            _LOGGER.debug("📖 Starting to read stream...")
+                            _LOGGER.debug("Starting to read stream...")
 
                         async for line in response.content:
 
@@ -2066,7 +2052,7 @@ class MCPAssistConversationEntity(ConversationEntity):
                                         completion_tokens = data.get("eval_count", 0) or 0
                                         total_tokens += prompt_tokens + completion_tokens
                                         if prompt_tokens or completion_tokens:
-                                            _LOGGER.info(f"📊 Ollama tokens: prompt={prompt_tokens}, completion={completion_tokens}")
+                                            _LOGGER.info("Ollama tokens: prompt=%d, completion=%d", prompt_tokens, completion_tokens)
                                         break
 
                                     # Extract message
@@ -2106,7 +2092,7 @@ class MCPAssistConversationEntity(ConversationEntity):
                                                 google_data = tc_delta.get('extra_content', {}).get('google', {})
                                                 if 'thought_signature' in google_data:
                                                     current_thought_signature = google_data['thought_signature']
-                                                    _LOGGER.info(f"🧠 Captured thought_signature: {current_thought_signature[:50]}...")
+                                                    _LOGGER.info("Captured thought_signature: %s...", current_thought_signature[:50])
                                                     break  # Only in first tool_call
 
                                 # Handle streamed content
@@ -2143,7 +2129,7 @@ class MCPAssistConversationEntity(ConversationEntity):
                                                 if 'function' not in current_tool_calls[idx]:
                                                     current_tool_calls[idx]['function'] = {}
                                                 current_tool_calls[idx]['function']['name'] = func['name']
-                                                _LOGGER.info(f"🔧 Tool streaming: {func['name']}")
+                                                _LOGGER.info("Tool streaming: %s", func['name'])
 
                                             if 'arguments' in func:
                                                 if idx not in tool_arg_buffers:
@@ -2175,7 +2161,7 @@ class MCPAssistConversationEntity(ConversationEntity):
                                 _LOGGER.debug(f"Stream parsing: {e}")
 
             except Exception as stream_error:
-                _LOGGER.error(f"❌ Streaming iteration {iteration + 1} failed: {stream_error}")
+                _LOGGER.error("Streaming iteration %d failed: %s", iteration + 1, stream_error)
                 if iteration == 0:
                     # First iteration failed, try fallback
                     raise stream_error
@@ -2190,10 +2176,10 @@ class MCPAssistConversationEntity(ConversationEntity):
 
             # If we got tool calls, execute them
             if has_tool_calls and current_tool_calls:
-                _LOGGER.info(f"⚡ Executing {len(current_tool_calls)} streamed tool calls")
+                _LOGGER.info("Executing %d streamed tool calls", len(current_tool_calls))
                 if self.debug_mode:
-                    _LOGGER.debug(f"📝 Discarding intermediate narration: {len(response_text)} chars")
-                    _LOGGER.debug(f"📊 Tool calls structure: {json.dumps(current_tool_calls, indent=2)}")
+                    _LOGGER.debug("Discarding intermediate narration: %d chars", len(response_text))
+                    _LOGGER.debug("Tool calls structure: %s", json.dumps(current_tool_calls, indent=2))
 
                 # Add assistant message with tool calls
                 # LM Studio streaming requires NO content field at all when tool_calls exist
@@ -2205,9 +2191,9 @@ class MCPAssistConversationEntity(ConversationEntity):
                                 "thought_signature": current_thought_signature
                             }
                         }
-                    _LOGGER.info(f"🧠 Added thought_signature to {len(current_tool_calls)} tool calls")
+                    _LOGGER.info("Added thought_signature to %d tool calls", len(current_tool_calls))
                 else:
-                    _LOGGER.warning("⚠️ No thought_signature captured for Gemini 3 (this will cause 400 error on next turn)")
+                    _LOGGER.warning("No thought_signature captured for Gemini 3 (this will cause 400 error on next turn)")
 
                 assistant_msg = {
                     "role": "assistant",
@@ -2280,7 +2266,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         Returns:
             Tuple of (response_text, total_tokens_used)
         """
-        _LOGGER.info(f"🚀 Using HTTP fallback for {self.server_type}")
+        _LOGGER.info("Using HTTP fallback for %s", self.server_type)
 
         # Get MCP tools once
         tools = await self._get_mcp_tools()
@@ -2293,7 +2279,7 @@ class MCPAssistConversationEntity(ConversationEntity):
 
         # Tool execution loop
         for iteration in range(self.max_iterations):
-            _LOGGER.info(f"🔄 HTTP Iteration {iteration + 1}: Calling {self.server_type} with {len(conversation_messages)} messages")
+            _LOGGER.info("HTTP Iteration %d: Calling %s with %d messages", iteration + 1, self.server_type, len(conversation_messages))
 
             # Build payload using appropriate method based on server type
             if self.server_type == SERVER_TYPE_OLLAMA:
@@ -2358,7 +2344,7 @@ class MCPAssistConversationEntity(ConversationEntity):
                         total_tokens += chunk_tokens
                     
                     if total_tokens > 0:
-                        _LOGGER.info(f"📊 HTTP tokens this iteration: {total_tokens}")
+                        _LOGGER.info("HTTP tokens this iteration: %d", total_tokens)
 
                     # Parse response based on server type
                     thought_signature = None  # Track for Gemini 3
@@ -2375,14 +2361,14 @@ class MCPAssistConversationEntity(ConversationEntity):
                     # Check if there are tool calls to execute
                     if "tool_calls" in message and message["tool_calls"]:
                         tool_calls = message["tool_calls"]
-                        _LOGGER.info(f"🛠️ {self.server_type} requested {len(tool_calls)} tool calls")
+                        _LOGGER.info("%s requested %d tool calls", self.server_type, len(tool_calls))
 
                         # Capture thought_signature from first tool_call (Gemini 3)
                         if tool_calls and 'extra_content' in tool_calls[0]:
                             google_data = tool_calls[0].get('extra_content', {}).get('google', {})
                             if 'thought_signature' in google_data:
                                 thought_signature = google_data['thought_signature']
-                                _LOGGER.info(f"🧠 Captured thought_signature: {thought_signature[:50]}...")
+                                _LOGGER.info("Captured thought_signature: %s...", thought_signature[:50])
 
                         # Ensure each tool_call has the required type field
                         for tc in tool_calls:
@@ -2406,7 +2392,7 @@ class MCPAssistConversationEntity(ConversationEntity):
                         self._record_tool_calls_to_chatlog(tool_calls)
 
                         # Execute the tool calls
-                        _LOGGER.info("⚡ Executing tool calls against MCP server...")
+                        _LOGGER.info("Executing tool calls against MCP server...")
                         tool_results = await self._execute_tool_calls(tool_calls)
 
                         # Record tool results to ChatLog for debug view
@@ -2425,7 +2411,7 @@ class MCPAssistConversationEntity(ConversationEntity):
                         # Add tool results to conversation
                         conversation_messages.extend(tool_results)
 
-                        _LOGGER.info(f"📊 Added {len(tool_results)} tool results to conversation")
+                        _LOGGER.info("Added %d tool results to conversation", len(tool_results))
 
                         # Continue the loop to get next response
                         continue
@@ -2433,12 +2419,12 @@ class MCPAssistConversationEntity(ConversationEntity):
                     else:
                         # No more tool calls, we have the final response
                         final_content = message.get("content", "").strip()
-                        _LOGGER.info(f"💬 Final response received (length: {len(final_content)}, tokens: {total_tokens})")
-                        _LOGGER.info(f"💬 Full response: {final_content}")
+                        _LOGGER.info("Final response received (length: %d, tokens: %d)", len(final_content), total_tokens)
+                        _LOGGER.info("Full response: %s", final_content)
                         return (final_content, total_tokens)
 
         # If we hit max iterations, return what we have
-        _LOGGER.warning(f"⚠️ Hit maximum iterations ({self.max_iterations}) in tool execution loop")
+        _LOGGER.warning("Hit maximum iterations (%d) in tool execution loop", self.max_iterations)
         return (f"I reached the maximum of {self.max_iterations} tool calls while processing your request. Try simplifying your request, or increase the limit in Advanced Settings if you have a complex automation need.", total_tokens)
 
     async def _execute_actions(

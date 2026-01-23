@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,13 +32,15 @@ def get_available_languages() -> list[str]:
 class KeywordLoader:
     """Loader for Fast Path keywords and responses."""
 
-    def __init__(self, language: str = "en") -> None:
+    def __init__(self, language: str = "en", hass: HomeAssistant | None = None) -> None:
         """Initialize the keyword loader.
         
         Args:
             language: The language code (e.g., 'de', 'en', 'fr')
+            hass: Optional Home Assistant instance for async file loading
         """
         self._language = language
+        self._hass = hass
         self._keywords: dict[str, Any] = {}
         self._responses: dict[str, Any] = {}
         self._custom_keywords: dict[str, Any] = {}
@@ -55,7 +59,11 @@ class KeywordLoader:
             self._loaded = False
 
     def load(self) -> None:
-        """Load keywords and responses from YAML files."""
+        """Load keywords and responses from YAML files (synchronous)."""
+        self._load_sync()
+
+    def _load_sync(self) -> None:
+        """Synchronous loading implementation."""
         self._keywords = self._load_yaml("keywords", self._language)
         self._responses = self._load_yaml("responses", self._language)
         self._custom_keywords = self._load_custom_keywords()
@@ -67,6 +75,21 @@ class KeywordLoader:
             self._language,
             len(self._keywords.get("actions", {}))
         )
+
+    async def load_async(self) -> None:
+        """Load keywords and responses asynchronously (non-blocking).
+        
+        Use this method when loading in an async context to avoid
+        blocking the event loop with file I/O.
+        """
+        if self._hass is None:
+            # Fall back to sync loading if no hass instance
+            self._load_sync()
+            return
+
+        # Run file I/O in executor to avoid blocking
+        await self._hass.async_add_executor_job(self._load_sync)
+        _LOGGER.debug("Fast Path keywords loaded asynchronously")
 
     def _load_yaml(self, folder: str, filename: str) -> dict[str, Any]:
         """Load a YAML file from the specified folder.

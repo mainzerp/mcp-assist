@@ -109,33 +109,33 @@ _LOGGER = logging.getLogger(__name__)
 
 async def fetch_models_from_lmstudio(hass: HomeAssistant, url: str) -> list[str]:
     """Fetch available models from local inference server (LM Studio/Ollama)."""
-    _LOGGER.info("🌐 FETCH: Starting model fetch from %s", url)
+    _LOGGER.info("FETCH: Starting model fetch from %s", url)
     try:
         # Small delay to ensure server is ready
         await asyncio.sleep(0.5)
 
         timeout = aiohttp.ClientTimeout(total=5)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            _LOGGER.info("📡 FETCH: Sending request to %s/v1/models", url)
+            _LOGGER.info("FETCH: Sending request to %s/v1/models", url)
             async with session.get(f"{url}/v1/models") as resp:
-                _LOGGER.info("📥 FETCH: Got response with status %d", resp.status)
+                _LOGGER.info("FETCH: Got response with status %d", resp.status)
                 if resp.status != 200:
-                    _LOGGER.warning("⚠️ FETCH: Non-200 status, returning empty list")
+                    _LOGGER.warning("FETCH: Non-200 status, returning empty list")
                     return []
 
                 models = await resp.json()
                 model_ids = [m.get("id", "") for m in models.get("data", [])]
                 sorted_models = sorted(model_ids) if model_ids else []
-                _LOGGER.info("✨ FETCH: Returning %d sorted models: %s", len(sorted_models), sorted_models)
+                _LOGGER.info("FETCH: Returning %d sorted models: %s", len(sorted_models), sorted_models)
                 return sorted_models
     except Exception as err:
-        _LOGGER.error("💥 FETCH: Exception during fetch: %s", err, exc_info=True)
+        _LOGGER.error("FETCH: Exception during fetch: %s", err, exc_info=True)
         return []
 
 
 async def fetch_models_from_openai(hass: HomeAssistant, api_key: str) -> list[str]:
     """Fetch available models from OpenAI API."""
-    _LOGGER.info("🌐 FETCH: Starting OpenAI model fetch")
+    _LOGGER.info("FETCH: Starting OpenAI model fetch")
     try:
         timeout = aiohttp.ClientTimeout(total=10)
         headers = {
@@ -144,15 +144,15 @@ async def fetch_models_from_openai(hass: HomeAssistant, api_key: str) -> list[st
         }
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            _LOGGER.info("📡 FETCH: Requesting OpenAI models")
+            _LOGGER.info("FETCH: Requesting OpenAI models")
             async with session.get(
                 f"{OPENAI_BASE_URL}/v1/models",
                 headers=headers
             ) as resp:
-                _LOGGER.info("📥 FETCH: OpenAI response status %d", resp.status)
+                _LOGGER.info("FETCH: OpenAI response status %d", resp.status)
                 if resp.status != 200:
                     error_text = await resp.text()
-                    _LOGGER.warning("⚠️ FETCH: OpenAI API error %d: %s", resp.status, error_text[:200])
+                    _LOGGER.warning("FETCH: OpenAI API error %d: %s", resp.status, error_text[:200])
                     return []
 
                 data = await resp.json()
@@ -161,30 +161,30 @@ async def fetch_models_from_openai(hass: HomeAssistant, api_key: str) -> list[st
                 # Only include GPT models suitable for chat
                 chat_models = [m for m in all_models if m.startswith("gpt-")]
                 sorted_models = sorted(chat_models, reverse=True) if chat_models else []
-                _LOGGER.info("✨ FETCH: Found %d OpenAI chat models", len(sorted_models))
+                _LOGGER.info("FETCH: Found %d OpenAI chat models", len(sorted_models))
                 return sorted_models
     except Exception as err:
-        _LOGGER.error("💥 FETCH: OpenAI fetch failed: %s", err)
+        _LOGGER.error("FETCH: OpenAI fetch failed: %s", err)
         return []
 
 
 async def fetch_models_from_gemini(hass: HomeAssistant, api_key: str) -> list[str]:
     """Fetch available models from Gemini API."""
-    _LOGGER.info("🌐 FETCH: Starting Gemini model fetch")
+    _LOGGER.info("FETCH: Starting Gemini model fetch")
     try:
         timeout = aiohttp.ClientTimeout(total=10)
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            _LOGGER.info("📡 FETCH: Requesting Gemini models")
+            _LOGGER.info("FETCH: Requesting Gemini models")
             # Gemini uses native API for model listing, not OpenAI-compatible endpoint
             # API key goes in query parameter for native API
             async with session.get(
                 f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
             ) as resp:
-                _LOGGER.info("📥 FETCH: Gemini response status %d", resp.status)
+                _LOGGER.info("FETCH: Gemini response status %d", resp.status)
                 if resp.status != 200:
                     error_text = await resp.text()
-                    _LOGGER.warning("⚠️ FETCH: Gemini API error %d: %s", resp.status, error_text[:200])
+                    _LOGGER.warning("FETCH: Gemini API error %d: %s", resp.status, error_text[:200])
                     return []
 
                 data = await resp.json()
@@ -200,16 +200,16 @@ async def fetch_models_from_gemini(hass: HomeAssistant, api_key: str) -> list[st
                 # Filter for gemini models only
                 gemini_models = [m for m in all_models if "gemini" in m.lower()]
                 sorted_models = sorted(gemini_models, reverse=True) if gemini_models else []
-                _LOGGER.info("✨ FETCH: Found %d Gemini models", len(sorted_models))
+                _LOGGER.info("FETCH: Found %d Gemini models", len(sorted_models))
                 return sorted_models
     except Exception as err:
-        _LOGGER.error("💥 FETCH: Gemini fetch failed: %s", err)
+        _LOGGER.error("FETCH: Gemini fetch failed: %s", err)
         return []
 
 
 async def fetch_models_from_openrouter(hass: HomeAssistant, api_key: str) -> list[str]:
     """Fetch available models from OpenRouter API."""
-    _LOGGER.info("🌐 FETCH: Starting OpenRouter model fetch")
+    _LOGGER.info("FETCH: Starting OpenRouter model fetch")
     try:
         timeout = aiohttp.ClientTimeout(total=10)
         headers = {
@@ -219,15 +219,15 @@ async def fetch_models_from_openrouter(hass: HomeAssistant, api_key: str) -> lis
         }
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            _LOGGER.info("📡 FETCH: Requesting OpenRouter models")
+            _LOGGER.info("FETCH: Requesting OpenRouter models")
             async with session.get(
                 f"{OPENROUTER_BASE_URL}/v1/models",
                 headers=headers
             ) as resp:
-                _LOGGER.info("📥 FETCH: OpenRouter response status %d", resp.status)
+                _LOGGER.info("FETCH: OpenRouter response status %d", resp.status)
                 if resp.status != 200:
                     error_text = await resp.text()
-                    _LOGGER.warning("⚠️ FETCH: OpenRouter API error %d: %s", resp.status, error_text[:200])
+                    _LOGGER.warning("FETCH: OpenRouter API error %d: %s", resp.status, error_text[:200])
                     return []
 
                 data = await resp.json()
@@ -236,10 +236,10 @@ async def fetch_models_from_openrouter(hass: HomeAssistant, api_key: str) -> lis
                 # Filter out empty strings and sort
                 models = [m for m in all_models if m]
                 sorted_models = sorted(models) if models else []
-                _LOGGER.info("✨ FETCH: Found %d OpenRouter models", len(sorted_models))
+                _LOGGER.info("FETCH: Found %d OpenRouter models", len(sorted_models))
                 return sorted_models
     except Exception as err:
-        _LOGGER.error("💥 FETCH: OpenRouter fetch failed: %s", err)
+        _LOGGER.error("FETCH: OpenRouter fetch failed: %s", err)
         return []
 
 
@@ -824,42 +824,42 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
         if server_type in [SERVER_TYPE_LMSTUDIO, SERVER_TYPE_LLAMACPP, SERVER_TYPE_OLLAMA]:
             # Local servers - fetch from URL
             server_url = options.get(CONF_LMSTUDIO_URL, data.get(CONF_LMSTUDIO_URL, DEFAULT_LMSTUDIO_URL)).rstrip("/")
-            _LOGGER.info(f"🔍 OPTIONS: Attempting to fetch models from {server_type} at {server_url}")
+            _LOGGER.info("OPTIONS: Attempting to fetch models from %s at %s", server_type, server_url)
             try:
                 models = await fetch_models_from_lmstudio(self.hass, server_url)
-                _LOGGER.info(f"✅ OPTIONS: Successfully fetched {len(models)} models")
+                _LOGGER.info("OPTIONS: Successfully fetched %d models", len(models))
             except Exception as err:
-                _LOGGER.error(f"❌ OPTIONS: Failed to fetch models: {err}")
+                _LOGGER.error("OPTIONS: Failed to fetch models: %s", err)
         elif server_type == SERVER_TYPE_OPENAI:
             # OpenAI - fetch from API
             api_key = options.get(CONF_API_KEY, data.get(CONF_API_KEY, ""))
             if api_key:
-                _LOGGER.info("🔍 OPTIONS: Attempting to fetch models from OpenAI")
+                _LOGGER.info("OPTIONS: Attempting to fetch models from OpenAI")
                 try:
                     models = await fetch_models_from_openai(self.hass, api_key)
-                    _LOGGER.info(f"✅ OPTIONS: Successfully fetched {len(models)} OpenAI models")
+                    _LOGGER.info("OPTIONS: Successfully fetched %d OpenAI models", len(models))
                 except Exception as err:
-                    _LOGGER.error(f"❌ OPTIONS: Failed to fetch OpenAI models: {err}")
+                    _LOGGER.error("OPTIONS: Failed to fetch OpenAI models: %s", err)
         elif server_type == SERVER_TYPE_GEMINI:
             # Gemini - fetch from API
             api_key = options.get(CONF_API_KEY, data.get(CONF_API_KEY, ""))
             if api_key:
-                _LOGGER.info("🔍 OPTIONS: Attempting to fetch models from Gemini")
+                _LOGGER.info("OPTIONS: Attempting to fetch models from Gemini")
                 try:
                     models = await fetch_models_from_gemini(self.hass, api_key)
-                    _LOGGER.info(f"✅ OPTIONS: Successfully fetched {len(models)} Gemini models")
+                    _LOGGER.info("OPTIONS: Successfully fetched %d Gemini models", len(models))
                 except Exception as err:
-                    _LOGGER.error(f"❌ OPTIONS: Failed to fetch Gemini models: {err}")
+                    _LOGGER.error("OPTIONS: Failed to fetch Gemini models: %s", err)
         elif server_type == SERVER_TYPE_OPENROUTER:
             # OpenRouter - fetch from API
             api_key = options.get(CONF_API_KEY, data.get(CONF_API_KEY, ""))
             if api_key:
-                _LOGGER.info("🔍 OPTIONS: Attempting to fetch models from OpenRouter")
+                _LOGGER.info("OPTIONS: Attempting to fetch models from OpenRouter")
                 try:
                     models = await fetch_models_from_openrouter(self.hass, api_key)
-                    _LOGGER.info(f"✅ OPTIONS: Successfully fetched {len(models)} OpenRouter models")
+                    _LOGGER.info("OPTIONS: Successfully fetched %d OpenRouter models", len(models))
                 except Exception as err:
-                    _LOGGER.error(f"❌ OPTIONS: Failed to fetch OpenRouter models: {err}")
+                    _LOGGER.error("OPTIONS: Failed to fetch OpenRouter models: %s", err)
 
         # Build model selector based on whether models were fetched
         if models:

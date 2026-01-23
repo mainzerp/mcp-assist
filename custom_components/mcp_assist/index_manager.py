@@ -61,7 +61,7 @@ class IndexManager:
             entity_registry_changed
         )
 
-        _LOGGER.info("✅ Smart Index Manager started successfully")
+        _LOGGER.info("Smart Index Manager started successfully")
         _LOGGER.debug("Index will be generated lazily on first request")
 
     def _schedule_refresh(self) -> None:
@@ -899,7 +899,7 @@ Focus on meaningful categories that would help discover relevant entities for us
 
                 try:
                     parsed = json.loads(repaired_text)
-                    _LOGGER.info("✅ JSON repair successful - recovered %d categories", len(parsed))
+                    _LOGGER.info("JSON repair successful - recovered %d categories", len(parsed))
                     return parsed
                 except json.JSONDecodeError:
                     _LOGGER.error("JSON repair failed, gap-filling will be skipped this cycle")

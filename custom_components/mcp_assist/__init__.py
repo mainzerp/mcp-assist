@@ -137,7 +137,7 @@ async def ensure_system_entry(hass: HomeAssistant) -> ConfigEntry:
         if system_entry is None:
             raise ConfigEntryNotReady("Failed to create system entry")
 
-        _LOGGER.info("✅ System entry created successfully with settings: mcp_port=%s, search_provider=%s",
+        _LOGGER.info("System entry created successfully with settings: mcp_port=%s, search_provider=%s",
                     shared_settings.get(CONF_MCP_PORT),
                     shared_settings.get(CONF_SEARCH_PROVIDER))
 
@@ -206,7 +206,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hass.data[DOMAIN]["mcp_refcount"] = 0
                 hass.data[DOMAIN]["mcp_port"] = mcp_port
 
-                _LOGGER.info("✅ Shared MCP server and index manager created successfully")
+                _LOGGER.info("Shared MCP server and index manager created successfully")
             else:
                 # Reuse existing MCP server
                 mcp_port = hass.data[DOMAIN]["mcp_port"]
@@ -228,7 +228,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Register update listener for option changes
         entry.async_on_unload(entry.add_update_listener(async_update_options))
 
-        _LOGGER.info("✅ Profile '%s' setup complete, Entry ID: %s", profile_name, entry.entry_id)
+        _LOGGER.info("Profile '%s' setup complete, Entry ID: %s", profile_name, entry.entry_id)
 
         return True
 
