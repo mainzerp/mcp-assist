@@ -758,7 +758,7 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Create system entry with provided data
         return self.async_create_entry(
-            title="System Settings",
+            title="Shared MCP Server Settings",
             data=data,
         )
 
@@ -792,6 +792,10 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         """Manage the options."""
+        # Check if this is the system entry - skip directly to MCP server settings
+        if self.config_entry.unique_id == SYSTEM_ENTRY_UNIQUE_ID:
+            return await self.async_step_mcp_server()
+
         errors: dict[str, str] = {}
 
         if user_input is not None:

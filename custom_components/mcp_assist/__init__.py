@@ -284,6 +284,30 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle removal of config entry."""
+    if entry.unique_id == SYSTEM_ENTRY_UNIQUE_ID:
+        # System entry being removed
+        _LOGGER.info("Shared MCP Server Settings removed")
+    else:
+        # Profile entry being removed
+        profile_name = entry.data.get("profile_name", "Unknown")
+        _LOGGER.info("Removing profile: %s", profile_name)
+
+        # Count remaining profiles (entry is already deleted, so don't need to exclude it)
+        remaining_profiles = [
+            e for e in hass.config_entries.async_entries(DOMAIN)
+            if e.unique_id != SYSTEM_ENTRY_UNIQUE_ID
+        ]
+
+        if not remaining_profiles:
+            # Last profile - auto-delete system entry
+            system_entry = get_system_entry(hass)
+            if system_entry:
+                _LOGGER.info("Last profile removed - auto-deleting Shared MCP Server Settings")
+                await hass.config_entries.async_remove(system_entry.entry_id)
+
+
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry."""
     await async_unload_entry(hass, entry)
