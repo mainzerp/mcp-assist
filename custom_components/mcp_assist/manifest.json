@@ -1,6 +1,6 @@
 {
-  "domain": "mcp_assist",
-  "name": "MCP Assist",
+  "domain": "mcp_assist_dev",
+  "name": "MCP Assist Dev",
   "codeowners": ["@mike-nott"],
   "config_flow": true,
   "dependencies": ["conversation"],
