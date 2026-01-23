@@ -922,11 +922,26 @@ class MCPAssistConversationEntity(ConversationEntity):
             return None
         
         # Create a reverse mapping: entity_id -> [names]
+        # Use a dict to deduplicate normalized names while keeping original forms
         entity_id_to_names: Dict[str, List[str]] = {}
         for name, entity_id in entity_names.items():
             if entity_id not in entity_id_to_names:
                 entity_id_to_names[entity_id] = []
-            entity_id_to_names[entity_id].append(name)
+            
+            # Normalize for comparison (lowercase, replace umlauts)
+            normalized = name.lower().replace("ä", "a").replace("ö", "o").replace("ü", "u").replace("ß", "ss")
+            
+            # Check if we already have a similar name (normalized comparison)
+            already_exists = False
+            for existing_name in entity_id_to_names[entity_id]:
+                existing_normalized = existing_name.lower().replace("ä", "a").replace("ö", "o").replace("ü", "u").replace("ß", "ss")
+                if normalized == existing_normalized:
+                    already_exists = True
+                    break
+            
+            # Only add if not already present (prefer the version with umlauts if available)
+            if not already_exists:
+                entity_id_to_names[entity_id].append(name)
         
         # Create loader and check if this is a candidate
         language = self.fast_path_language
