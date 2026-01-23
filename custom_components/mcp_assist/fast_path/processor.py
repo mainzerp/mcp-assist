@@ -202,13 +202,14 @@ class FastPathProcessor:
         entity_ids = self._find_entities(text_for_entity)
         
         if not entity_ids:
-            _LOGGER.debug("Fast Path found no matching entities in: %s", text_for_entity)
+            _LOGGER.debug("Fast Path found no confident entity match in: %s", text_for_entity)
+            # Return handled=False to let MCP assistant handle ambiguous cases
             return FastPathResult(
                 success=False,
-                handled=True,
-                response=self._loader.get_error_response("no_entity"),
+                handled=False,
+                response="",
                 action=action,
-                error="No matching entity found",
+                error="No confident entity match - defer to MCP assistant",
             )
         
         _LOGGER.debug("Fast Path found entities: %s", entity_ids)
@@ -400,7 +401,7 @@ class FastPathProcessor:
             text: The text to search for entity names
             
         Returns:
-            List of matching entity IDs
+            List of matching entity IDs, or empty list if match is ambiguous
         """
         matched_entities: list[tuple[str, int, str]] = []
         text_normalized = self._normalize_for_matching(text)
@@ -489,7 +490,82 @@ class FastPathProcessor:
                 seen.add(entity_id)
                 result.append(entity_id)
         
+        # Validate: Check if there are unmatched substantive words that could be part of entity name
+        # This helps avoid incorrect matches when STT produces errors like "Ambiente Bohnen" instead of "Ambiente Wohnen"
+        if result and not self._validate_entity_match(text_normalized, filtered_matches):
+            _LOGGER.debug(
+                "Fast Path: Rejecting match due to unmatched substantive words in: %s",
+                text
+            )
+            return []  # Return empty to signal uncertain match
+        
         return result
+
+    def _validate_entity_match(
+        self, 
+        text_normalized: str, 
+        matched_entities: list[tuple[str, int, str]]
+    ) -> bool:
+        """Validate that the entity match is not ambiguous.
+        
+        Checks if there are unmatched substantive words in the text that could
+        indicate an incomplete or incorrect match (e.g., STT error).
+        
+        Args:
+            text_normalized: The normalized input text
+            matched_entities: List of (entity_id, match_length, matched_name) tuples
+            
+        Returns:
+            True if the match is confident, False if ambiguous
+        """
+        # Remove all matched entity names from the text
+        remaining_text = text_normalized
+        for _, _, matched_name in matched_entities:
+            remaining_text = remaining_text.replace(matched_name, " ")
+        
+        # Remove extra whitespace
+        remaining_text = " ".join(remaining_text.split())
+        
+        # Common non-substantive words (articles, prepositions, etc.) in multiple languages
+        # These are okay to be left over
+        common_words = {
+            # German
+            "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem",
+            "im", "in", "an", "auf", "von", "zu", "bei", "mit", "fur", "uber",
+            "und", "oder", "aber",
+            # English
+            "the", "a", "an", "in", "on", "at", "to", "for", "of", "with",
+            "and", "or", "but",
+            # French
+            "le", "la", "les", "un", "une", "de", "du", "au", "en", "dans",
+            "et", "ou", "mais",
+            # Spanish
+            "el", "la", "los", "las", "un", "una", "de", "del", "al", "en",
+            "y", "o", "pero",
+            # Dutch
+            "de", "het", "een", "van", "in", "op", "aan", "bij", "met",
+            "en", "of", "maar",
+        }
+        
+        # Check each remaining word
+        words = remaining_text.split()
+        for word in words:
+            # Skip very short words (likely not substantive)
+            if len(word) <= 2:
+                continue
+            
+            # Skip common non-substantive words
+            if word in common_words:
+                continue
+            
+            # If we find a substantive word that wasn't matched, this is suspicious
+            _LOGGER.debug(
+                f"Fast Path: Found unmatched substantive word: '{word}' in text: '{text_normalized}'"
+            )
+            return False
+        
+        # All remaining words are non-substantive, match is confident
+        return True
 
     def _normalize_for_matching(self, text: str) -> str:
         """Normalize text for entity matching.
@@ -502,6 +578,9 @@ class FastPathProcessor:
         """
         # Lowercase
         text = text.lower()
+        
+        # Replace hyphens and underscores with spaces for better matching
+        text = text.replace("-", " ").replace("_", " ")
         
         # Replace umlauts and special chars
         replacements = {
