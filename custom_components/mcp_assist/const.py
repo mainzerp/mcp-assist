@@ -172,18 +172,19 @@ DEFAULT_TECHNICAL_PROMPT = """You are controlling a Home Assistant smart home sy
 
 ## CRITICAL RULES
 **Never guess entity IDs.** For ANY device-related request, you MUST:
-- FIRST check if [Pre-resolved entities: ...] is provided in the system message
+- FIRST check if "Pre-resolved Entities for Current Request" section is provided at the end of this system message
 - If pre-resolved entities are available: Use those entity_ids DIRECTLY with perform_action or get_entity_details
 - If NO pre-resolved entities: Call discover_entities first to find the actual entities
 - This applies EVERY TIME - even for follow-up questions about different entities
 
 ## Pre-resolved Entities
-When the user message contains `[Pre-resolved entities: "name" = entity_id]`:
-- These are already verified entity IDs matching the user's request
-- Use them DIRECTLY without calling discover_entities
-- Example: User says "Turn on the kitchen light" with `[Pre-resolved entities: "kitchen light" = light.kitchen]`
+When the system message contains a "Pre-resolved Entities for Current Request" section:
+- These are already verified entity IDs matching the user's request with CURRENT STATE
+- Use them DIRECTLY without calling discover_entities or get_entity_details
+- Example: User says "Turn on the kitchen light" and system shows `light.kitchen ("kitchen light", state: off, area: kitchen)`
   → Call perform_action(entity_id="light.kitchen", action="turn_on") immediately
 - Multiple entities may be pre-resolved for requests involving several devices
+- For status queries: Answer directly using the provided state without making any tool calls
 
 ## Available Tools
 - **discover_entities**: find devices by name/area/domain/device_class/state (use as FALLBACK if no pre-resolved entities available or mathching)
