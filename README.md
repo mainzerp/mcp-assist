@@ -10,6 +10,7 @@ A Home Assistant conversation agent that uses MCP (Model Context Protocol) for e
 - ✅ **No Entity Dumps**: Never sends 12,000+ token entity lists to the LLM
 - ✅ **Smart Entity Index**: Pre-generated system structure index (~400-800 tokens) for context-aware queries
 - ✅ **Multi-Platform Support**: Works with LM Studio, llama.cpp, Ollama, OpenAI, Google Gemini, Anthropic Claude, and OpenRouter
+- ✅ **Multilingual Support**: 20 languages with localized UI, system prompts, and speech detection
 - ✅ **Multi-turn Conversations**: Maintains conversation context and history
 - ✅ **Dynamic Discovery**: Finds entities by area, type, device_class, state, or name on-demand
 - ✅ **Web Search Tools**: Optional DuckDuckGo or Brave Search integration for current information
@@ -165,6 +166,10 @@ Fast Path gracefully falls back to the LLM for:
 | **Fast Path** | ~50ms | 0 tokens |
 | LLM (local) | 500-2000ms | ~400 tokens |
 | LLM (cloud) | 1000-3000ms | ~400 tokens |
+
+## Multilingual Support (v0.12.0+)
+
+MCP Assist supports **20 languages** with localized configuration interfaces, language-aware system prompts, and region-specific speech detection patterns. The integration automatically detects your Home Assistant system language and provides appropriate defaults for system prompts, follow-up phrases, and end conversation words. Supported languages include: Arabic, Chinese (Simplified), Czech, Danish, Dutch, Finnish, Filipino, French, German, Greek, Italian, Japanese, Korean, Norwegian, Polish, Portuguese, Russian, Spanish, Swedish, and Turkish.
 
 ## Requirements
 

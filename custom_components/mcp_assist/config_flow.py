@@ -24,6 +24,8 @@ from homeassistant.helpers.selector import (
     BooleanSelector,
 )
 
+from .localization import get_language_instruction, get_follow_up_phrases, get_end_words
+
 from .const import (
     DOMAIN,
     SYSTEM_ENTRY_UNIQUE_ID,
@@ -476,7 +478,10 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         custom_value=True,
                     )
                 ),
-                vol.Required(CONF_SYSTEM_PROMPT, default=DEFAULT_SYSTEM_PROMPT): TextSelector(
+                vol.Required(
+                    CONF_SYSTEM_PROMPT,
+                    default=get_language_instruction(self.hass.config.language) or DEFAULT_SYSTEM_PROMPT
+                ): TextSelector(
                     TextSelectorConfig(type=TextSelectorType.TEXT, multiline=True)
                 ),
                 vol.Required(CONF_TECHNICAL_PROMPT, default=DEFAULT_TECHNICAL_PROMPT): TextSelector(
@@ -488,7 +493,10 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.info("No models fetched, showing text input")
             model_schema = vol.Schema({
                 vol.Required(CONF_MODEL_NAME, default=DEFAULT_MODEL_NAME): str,
-                vol.Required(CONF_SYSTEM_PROMPT, default=DEFAULT_SYSTEM_PROMPT): TextSelector(
+                vol.Required(
+                    CONF_SYSTEM_PROMPT,
+                    default=get_language_instruction(self.hass.config.language) or DEFAULT_SYSTEM_PROMPT
+                ): TextSelector(
                     TextSelectorConfig(type=TextSelectorType.TEXT, multiline=True)
                 ),
                 vol.Required(CONF_TECHNICAL_PROMPT, default=DEFAULT_TECHNICAL_PROMPT): TextSelector(
@@ -619,10 +627,16 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     mode=SelectSelectorMode.DROPDOWN,
                 )
             ),
-            vol.Optional(CONF_FOLLOW_UP_PHRASES, default=DEFAULT_FOLLOW_UP_PHRASES): TextSelector(
+            vol.Optional(
+                CONF_FOLLOW_UP_PHRASES,
+                default=get_follow_up_phrases(self.hass.config.language)
+            ): TextSelector(
                 TextSelectorConfig(multiline=True)
             ),
-            vol.Optional(CONF_END_WORDS, default=DEFAULT_END_WORDS): TextSelector(
+            vol.Optional(
+                CONF_END_WORDS,
+                default=get_end_words(self.hass.config.language)
+            ): TextSelector(
                 TextSelectorConfig(multiline=True)
             ),
             vol.Required(CONF_DEBUG_MODE, default=DEFAULT_DEBUG_MODE): bool,
