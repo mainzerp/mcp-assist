@@ -430,6 +430,7 @@ When tool calling **works correctly**, you'll see in logs:
 - `perform_action` called to control them
 - "✅ Successfully executed" messages
 - Devices actually change state
+- Tool calls visible in Settings → Voice Assistants → (profile) → Debug
 
 ### General Guidelines
 
