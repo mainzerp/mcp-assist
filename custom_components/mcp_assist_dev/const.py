@@ -45,7 +45,7 @@ DEFAULT_SERVER_TYPE = "lmstudio"
 DEFAULT_LMSTUDIO_URL = "http://localhost:1234"
 DEFAULT_LLAMACPP_URL = "http://localhost:8080"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
-DEFAULT_MCP_PORT = 8090
+DEFAULT_MCP_PORT = 8091
 DEFAULT_API_KEY = ""
 
 # Cloud provider base URLs
