@@ -1442,16 +1442,6 @@ class MCPAssistConversationEntity(ConversationEntity):
                                     choice = data['choices'][0]
                                     delta = choice.get('delta', {})
 
-                                    # Capture thought_signature from tool_calls (it's inside the first tool_call, not at choice/delta level)
-                                    if 'tool_calls' in delta and current_thought_signature is None:
-                                        for tc_delta in delta['tool_calls']:
-                                            if 'extra_content' in tc_delta:
-                                                google_data = tc_delta.get('extra_content', {}).get('google', {})
-                                                if 'thought_signature' in google_data:
-                                                    current_thought_signature = google_data['thought_signature']
-                                                    _LOGGER.info(f"🧠 Captured thought_signature: {current_thought_signature[:50]}...")
-                                                    break  # Only in first tool_call
-
                                 # Handle streamed content
                                 if 'content' in delta and delta['content']:
                                     chunk = delta['content']
@@ -1478,6 +1468,15 @@ class MCPAssistConversationEntity(ConversationEntity):
                                             current_tool_calls[idx]['id'] = tc['id']
                                             # Add the required type field
                                             current_tool_calls[idx]['type'] = 'function'
+
+                                        # Capture extra_content with thought_signature (Gemini 3)
+                                        if 'extra_content' in tc:
+                                            current_tool_calls[idx]['extra_content'] = tc['extra_content']
+                                            # Extract thought_signature for logging
+                                            google_data = tc.get('extra_content', {}).get('google', {})
+                                            if 'thought_signature' in google_data and current_thought_signature is None:
+                                                current_thought_signature = google_data['thought_signature']
+                                                _LOGGER.info(f"🧠 Captured thought_signature from streaming: {current_thought_signature[:50]}...")
 
                                         if 'function' in tc:
                                             func = tc['function']
@@ -1540,18 +1539,19 @@ class MCPAssistConversationEntity(ConversationEntity):
 
                 # Add assistant message with tool calls
                 # LM Studio streaming requires NO content field at all when tool_calls exist
-                # Gemini 3: thought_signature goes INSIDE each tool_call, not at message level
-                if current_thought_signature is not None:
-                    for tool_call in current_tool_calls:
-                        tool_call["extra_content"] = {
-                            "google": {
-                                "thought_signature": current_thought_signature
-                            }
-                        }
-                    _LOGGER.info(f"🧠 Added thought_signature to {len(current_tool_calls)} tool calls")
-                elif self.server_type == SERVER_TYPE_GEMINI or (hasattr(self, 'model_name') and 'gemini' in self.model_name.lower()):
-                    # Only warn for actual Gemini models/servers, not for OpenRouter or other providers
-                    _LOGGER.warning("⚠️ No thought_signature captured for Gemini (this will cause 400 error on next turn)")
+                # Gemini 3: thought_signature should already be in extra_content from API response
+                # Log if we're missing thought_signature for Gemini models
+                if self.server_type == SERVER_TYPE_GEMINI or (hasattr(self, 'model_name') and 'gemini' in self.model_name.lower()):
+                    # Check if first tool call has thought_signature
+                    has_signature = False
+                    if current_tool_calls and 'extra_content' in current_tool_calls[0]:
+                        google_data = current_tool_calls[0].get('extra_content', {}).get('google', {})
+                        has_signature = 'thought_signature' in google_data
+                    
+                    if has_signature:
+                        _LOGGER.info(f"🧠 Preserving thought_signature in {len(current_tool_calls)} tool call(s)")
+                    else:
+                        _LOGGER.warning("⚠️ No thought_signature in tool_calls for Gemini (this may cause 400 error on next turn)")
 
                 assistant_msg = {
                     "role": "assistant",
