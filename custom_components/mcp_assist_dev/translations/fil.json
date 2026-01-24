@@ -112,7 +112,7 @@
   },
   "entity": {
     "conversation": {
-      "mcp_assist": {
+      "mcp_assist_dev": {
         "name": "{profile_name}"
       }
     }
