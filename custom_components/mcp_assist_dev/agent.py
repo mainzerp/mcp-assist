@@ -1541,8 +1541,8 @@ class MCPAssistConversationEntity(ConversationEntity):
                 # LM Studio streaming requires NO content field at all when tool_calls exist
                 # Gemini 3: thought_signature should already be in extra_content from API response
                 # Log if we're missing thought_signature for Gemini models
-                if self.server_type == SERVER_TYPE_GEMINI or (hasattr(self, 'model_name') and 'gemini' in self.model_name.lower()):
-                    # Check if first tool call has thought_signature
+                if self.server_type == SERVER_TYPE_GEMINI:
+                    # Only warn for direct Gemini API usage (not OpenRouter)
                     has_signature = False
                     if current_tool_calls and 'extra_content' in current_tool_calls[0]:
                         google_data = current_tool_calls[0].get('extra_content', {}).get('google', {})

@@ -86,7 +86,7 @@ class DuckDuckGoSearchTool:
         """Synchronous search wrapper for thread pool execution."""
         try:
             raw_results = DDGS().text(
-                keywords=query,
+                query,
                 max_results=count,
                 region="us-en",
                 safesearch="moderate",
