@@ -1,0 +1,13 @@
+{
+  "domain": "mcp_assist_dev",
+  "name": "MCP Assist Dev",
+  "codeowners": ["@mike-nott"],
+  "config_flow": true,
+  "dependencies": ["conversation"],
+  "documentation": "https://github.com/mike-nott/mcp-assist",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/mike-nott/mcp-assist/issues",
+  "requirements": ["aiohttp>=3.8.0", "pyyaml>=6.0", "ddgs>=6.0.0"],
+  "version": "0.12.0"
+}
